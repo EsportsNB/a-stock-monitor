@@ -147,6 +147,7 @@
       <div class="card">
         <div class="row" style="justify-content: space-between; align-items: center;">
           <h2>股票列表</h2>
+          <div style="margin-left:12px;color:#6b7280;font-size:13px;" id="dataUpdatedAt">最近刷新：--</div>
           <div class="pager">
             <button id="prevPage">上一页</button>
             <div id="pageInfo">第 1 页</div>
@@ -298,6 +299,13 @@
         }
         const data = await res.json();
         total = data.total;
+        // Show data timestamp if provided
+        const dataUpdatedEl = document.getElementById('dataUpdatedAt');
+        if (dataUpdatedEl) {
+          const up = data.updated_at ? data.updated_at : '--';
+          const ri = data.refresh_interval ? data.refresh_interval : '--';
+          dataUpdatedEl.textContent = `最近刷新：${up} (间隔 ${ri}s)`;
+        }
         pageInfo.textContent = `第 ${data.page} 页 / ${Math.max(1, Math.ceil(total / pageSize))} 页（共 ${total} 条）`;
         stockTable.innerHTML = data.stocks.map(stock => {
           const sign = stock.change >= 0 ? 'positive' : 'negative';

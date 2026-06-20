@@ -49,6 +49,8 @@ class StockListResponse(BaseModel):
     stocks: List[StockItem]
     sort_by: Optional[str] = None
     order: Optional[str] = None
+    updated_at: Optional[str] = None
+    refresh_interval: Optional[int] = None
 
 
 class StockHistoryPoint(BaseModel):

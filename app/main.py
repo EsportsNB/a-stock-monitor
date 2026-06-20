@@ -27,8 +27,6 @@ from .stock_monitor import (
     spot_source,
     start_background_cache_refresh,
 )
-from .realtime import start_realtime_watchlist
-
 app = FastAPI(title="中国大陆股市实时监控服务")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
@@ -39,19 +37,6 @@ def startup_event():
     disable_proxy_for_china_data()
     # 后台预热缓存，不阻塞启动，服务可立即响应
     start_background_cache_refresh()
-    # 可选的实时行情推送（需配置 FINNHUB_API_KEY 环境变量以启用）
-    try:
-        start_realtime_watchlist()
-    except Exception:
-        # 不让 realtime 错误阻塞服务启动
-        pass
-    # 启动关注列表的快速轮询（无需外部 API key，提升 watchlist 的响应速度）
-    try:
-        from .stock_monitor import start_watchlist_polling
-
-        start_watchlist_polling()
-    except Exception:
-        pass
 
 
 def _require_cache_ready():

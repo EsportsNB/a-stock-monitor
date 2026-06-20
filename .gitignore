@@ -1,5 +1,10 @@
 __pycache__/
 *.pyc
+*.log
 logs/
 api_resp.txt
 api_result.json
+watchlist.json
+push-diagnose.log
+pwtest.txt
+scripts/
