@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>A股实时监控</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "微软雅黑", sans-serif; margin: 0; padding: 0; background: #f7f8fb; color: #222; }
+    .container { max-width: 1760px; margin: 0 auto; padding: 24px; }
+    h1, h2 { margin: 0 0 14px; }
+    .card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 12px 28px rgba(0,0,0,.06); margin-bottom: 18px; }
+    .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+    .input-box { flex: 1; min-width: 240px; }
+    input, select { width: 100%; padding: 12px 14px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; }
+    button { padding: 12px 18px; border: none; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; font-size: 14px; }
+    button:disabled { background: #94b3ff; cursor: not-allowed; }
+    .status { margin-top: 12px; color: #666; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 14px; }
+    th { background: #fafafa; }
+    tr:hover { background: #f2f9ff; cursor: pointer; }
+    .positive { color: #16a34a; }
+    .negative { color: #dc2626; }
+    .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; }
+    .chart-card { display: grid; gap: 18px; }
+    .chart-box { min-height: 320px; }
+    .summary-block { padding: 12px 14px; background: #f9fafb; border-radius: 10px; color: #333; }
+
+    /* —— 关注列表 / 大户异动告警 —— */
+    .alert-bar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
+      padding: 14px 20px; border-radius: 0 0 12px 12px; margin-bottom: 14px; font-size: 15px; font-weight: 700;
+      box-shadow: 0 8px 22px rgba(0,0,0,.22); }
+    .alert-bar.hidden { display: none; }
+    .alert-bar.buy  { background: #052e16; color: #bbf7d0; }
+    .alert-bar.sell { background: #450a0a; color: #fecaca; }
+    .alert-lamp { width: 16px; height: 16px; border-radius: 50%; flex: none; }
+    .alert-bar.buy  .alert-lamp { background: #22c55e; animation: lampGreen .7s infinite; }
+    .alert-bar.sell .alert-lamp { background: #ef4444; animation: lampRed .7s infinite; }
+    @keyframes lampGreen { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.95);} 50% { box-shadow: 0 0 0 9px rgba(34,197,94,0);} }
+    @keyframes lampRed   { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.95);} 50% { box-shadow: 0 0 0 9px rgba(239,68,68,0);} }
+    @keyframes flashGreen { 0%,100% { background:#fff;} 50% { background:#bbf7d0;} }
+    @keyframes flashRed   { 0%,100% { background:#fff;} 50% { background:#fecaca;} }
+    tr.alert-buy  { animation: flashGreen 1s ease-in-out infinite; }
+    tr.alert-sell { animation: flashRed 1s ease-in-out infinite; }
+    tr.alert-buy td:first-child, tr.alert-sell td:first-child { font-weight: 800; }
+    .badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:12px; font-weight:700; color:#fff; }
+    .badge-buy { background:#16a34a; }
+    .badge-sell { background:#dc2626; }
+    .badge-trade { background:#f59e0b; }
+    .del-btn { background:#ef4444; padding:6px 10px; font-size:12px; }
+    .vol-spike { color:#b45309; font-weight:800; }
+
+    /* —— 列表与走势图并排布局 + 可排序表头 —— */
+    /* 走势图固定 480px，列表占剩余；窄屏(<1500)走势图移到下方，列表占满整宽 */
+    .list-chart-grid { display: grid; grid-template-columns: minmax(0, 1fr) 480px; gap: 18px; align-items: start; }
+    @media (max-width: 1500px) { .list-chart-grid { grid-template-columns: 1fr; } }
+    #chartCard { position: sticky; top: 12px; }
+    /* 五档报价 */
+    .bidask-block { margin-top: 18px; }
+    .bidask-block h3 { margin: 0 0 8px; font-size: 15px; }
+    .bidask-block table { width: 100%; margin-top: 0; }
+    .bidask-block td { padding: 5px 12px; font-size: 13px; border-bottom: 1px solid #f3f4f6; }
+    .ba-label { color: #6b7280; width: 56px; }
+    .ba-price { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .ba-vol { text-align: right; color: #4b5563; font-variant-numeric: tabular-nums; }
+    .ba-ask .ba-price { color: #16a34a; }   /* 卖盘价(高于现价)用绿，沿用本页涨绿惯例 */
+    .ba-bid .ba-price { color: #dc2626; }   /* 买盘价用红 */
+    .ba-mid td { background: #eef2ff; font-weight: 700; text-align: center; color: #1e3a8a; }
+    /* 固定表格布局：列宽不随数据/排序变化，杜绝点击排序时整表抖动 */
+    #stockListTable { table-layout: fixed; width: 100%; min-width: 962px; }
+    #stockListTable th, #stockListTable td { padding-left: 6px; padding-right: 6px; }
+    #stockListTable th { white-space: nowrap; }            /* 列名完整显示，不截断 */
+    #stockListTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* 仅数据过长时省略 */
+    #stockListTable th:nth-child(1){width:88px}   /* 代码 */
+    #stockListTable th:nth-child(2){width:82px}   /* 名称 */
+    #stockListTable th:nth-child(3){width:66px}   /* 现价 */
+    #stockListTable th:nth-child(4){width:64px}   /* 涨跌 */
+    #stockListTable th:nth-child(5){width:74px}   /* 涨跌幅 */
+    #stockListTable th:nth-child(6){width:64px}   /* 最高 */
+    #stockListTable th:nth-child(7){width:64px}   /* 最低 */
+    #stockListTable th:nth-child(8){width:80px}   /* 成交量 */
+    #stockListTable th:nth-child(9){width:80px}   /* 即时量 */
+    #stockListTable th:nth-child(10){width:62px}  /* 基线 */
+    #stockListTable th:nth-child(11){width:92px}  /* 放量倍数 */
+    #stockListTable th:nth-child(12){width:64px}  /* 异动 */
+    #stockListTable th:nth-child(13){width:84px}  /* 趋势 */
+    th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
+    th.sortable:hover { background: #eef2ff; }
+    /* 箭头固定宽度占位，避免点击排序时列宽跳动 */
+    th .arrow { display: inline-block; width: 12px; text-align: center; color: #2563eb; font-size: 12px; }
+    th.sortable.active { color: #2563eb; }
+    /* 术语帮助问号 + 原生 tooltip */
+    .help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
+      margin-left: 4px; border-radius: 50%; background: #cbd5e1; color: #fff; font-size: 10px; font-weight: 700;
+      cursor: help; vertical-align: middle; }
+    .help:hover { background: #2563eb; }
+  </style>
+</head>
+<body>
+  <div id="alertBar" class="alert-bar hidden">
+    <span class="alert-lamp"></span>
+    <span id="alertText"></span>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h1>中国股市实时监控</h1>
+      <div class="row">
+        <div class="input-box">
+          <input id="searchInput" placeholder="搜索代码或名称，例如 600519 / 贵州茅台" />
+        </div>
+        <div style="width: 140px;"><select id="marketSelect"><option value="all">全部</option><option value="sh">上证</option><option value="sz">深证</option><option value="bj">北证</option></select></div>
+        <div><button id="searchBtn">查询</button></div>
+      </div>
+      <div class="status" id="status">直接浏览全部股票，可切换市场并点击行查看走势图。</div>
+    </div>
+    <div class="card" id="indicesCard">
+      <h2>主要指数</h2>
+      <div class="row" id="indices"></div>
+    </div>
+    <div class="card">
+      <h2>⭐ 我的关注 · 大户异动监控</h2>
+      <div class="row">
+        <div class="input-box"><input id="watchInput" placeholder="输入代码添加关注，如 600519 / 000001 / 920000" /></div>
+        <div><button id="addWatchBtn">添加关注</button></div>
+      </div>
+      <div class="status" id="watchStatus">关注列表为空。添加股票后，系统每 30 秒监控其即时成交量，发现突然大买/大卖会强提醒。</div>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>代码</th>
+              <th>名称</th>
+              <th>现价</th>
+              <th>涨跌幅</th>
+              <th>即时成交量</th>
+              <th>基线</th>
+              <th>放量倍数</th>
+              <th>异动</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="watchTable"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="list-chart-grid">
+      <div class="card">
+        <div class="row" style="justify-content: space-between; align-items: center;">
+          <h2>股票列表</h2>
+          <div class="pager">
+            <button id="prevPage">上一页</button>
+            <div id="pageInfo">第 1 页</div>
+            <button id="nextPage">下一页</button>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px;">
+          <div style="width:150px;"><select id="filterSelect">
+            <option value="all">全部涨跌</option>
+            <option value="up">仅看上涨</option>
+            <option value="down">仅看下跌</option>
+            <option value="limit_up">涨停 (≥9.8%)</option>
+            <option value="limit_down">跌停 (≤-9.8%)</option>
+          </select></div>
+          <div style="width:150px;"><select id="trendSelect">
+            <option value="all">全部趋势</option>
+            <option value="强势上涨">强势上涨</option>
+            <option value="温和上涨">温和上涨</option>
+            <option value="盘中微涨">盘中微涨</option>
+            <option value="横盘震荡">横盘震荡</option>
+            <option value="盘中微跌">盘中微跌</option>
+            <option value="温和下跌">温和下跌</option>
+            <option value="快速下跌">快速下跌</option>
+          </select></div>
+          <div class="status" id="sortHint" style="margin:0;flex:1;min-width:160px;">点击列名排序，再次点击切换升/降序。</div>
+        </div>
+        <div style="overflow-x:auto;">
+          <table id="stockListTable">
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="code">代码<span class="arrow"></span></th>
+                <th class="sortable" data-sort="name">名称<span class="arrow"></span></th>
+                <th class="sortable" data-sort="current_price">现价<span class="arrow"></span></th>
+                <th class="sortable" data-sort="change">涨跌<span class="arrow"></span></th>
+                <th class="sortable" data-sort="change_percent">涨跌幅<span class="arrow"></span></th>
+                <th class="sortable" data-sort="high">最高<span class="arrow"></span></th>
+                <th class="sortable" data-sort="low">最低<span class="arrow"></span></th>
+                <th class="sortable" data-sort="volume">成交量<span class="arrow"></span></th>
+                <th class="sortable" data-sort="volume_delta">即时量<span class="help" title="即时成交量：最近一个刷新周期（约30秒）内的成交量，反映当下交易活跃度。">?</span><span class="arrow"></span></th>
+                <th>基线<span class="help" title="基线成交量：该股最近若干个周期即时成交量的中位数，代表常态成交水平，用于判断是否放量。">?</span></th>
+                <th class="sortable" data-sort="volume_ratio">放量倍数<span class="help" title="放量倍数 = 当前即时成交量 ÷ 基线。倍数越大说明当下成交越异常放大，≥3倍视为放量异动。">?</span><span class="arrow"></span></th>
+                <th>异动<span class="help" title="大买/大卖信号：放量倍数≥3倍时按价格方向判定——价涨为大买(资金流入)，价跌为大卖(资金流出)。">?</span></th>
+                <th>趋势<span class="help" title="按涨跌幅综合判定：强势上涨≥3%、温和上涨≥1%、横盘震荡、温和下跌≤-1%、快速下跌≤-3%。">?</span></th>
+              </tr>
+            </thead>
+            <tbody id="stockTable"></tbody>
+          </table>
+        </div>
+        <div class="status" id="tableStatus">正在加载数据...</div>
+      </div>
+      <div class="card chart-card" id="chartCard">
+        <h2>股票走势图</h2>
+        <div class="summary-block" id="selectedStock">未选择股票，点击任意股票行查看走势图。</div>
+        <div class="chart-box"><canvas id="stockChart"></canvas></div>
+        <div id="bidAsk" class="bidask-block"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const searchInput = document.getElementById('searchInput');
+    const marketSelect = document.getElementById('marketSelect');
+    const searchBtn = document.getElementById('searchBtn');
+    const statusEl = document.getElementById('status');
+    const tableStatus = document.getElementById('tableStatus');
+    const stockTable = document.getElementById('stockTable');
+    const pageInfo = document.getElementById('pageInfo');
+    const prevPage = document.getElementById('prevPage');
+    const nextPage = document.getElementById('nextPage');
+    const selectedStock = document.getElementById('selectedStock');
+    const indicesEl = document.getElementById('indices');
+    const chartCanvas = document.getElementById('stockChart');
+    const alertBar = document.getElementById('alertBar');
+    const alertText = document.getElementById('alertText');
+    const watchInput = document.getElementById('watchInput');
+    const addWatchBtn = document.getElementById('addWatchBtn');
+    const watchStatus = document.getElementById('watchStatus');
+    const watchTable = document.getElementById('watchTable');
+    const filterSelect = document.getElementById('filterSelect');
+    const trendSelect = document.getElementById('trendSelect');
+    const bidAsk = document.getElementById('bidAsk');
+
+    let page = 1;
+    const pageSize = 20;
+    let total = 0;
+    let stockChart = null;
+    let sortBy = 'code';
+    let sortOrder = 'asc';
+    let filterMode = 'all';
+    let trendMode = 'all';
+
+    async function loadIndices() {
+      try {
+        const res = await fetch('/api/indices');
+        const data = await res.json();
+        indicesEl.innerHTML = data.map(item => {
+          const sign = item.change_percent >= 0 ? 'positive' : 'negative';
+          return `
+            <div style="min-width: 180px; background:#f2f7ff; border-radius:12px; padding:14px;">
+              <div><strong>${item.name}</strong></div>
+              <div style="margin-top:10px;font-size:20px;">${item.price != null ? item.price.toFixed(2) : '--'}</div>
+              <div class="${sign}" style="margin-top:6px;">${item.change != null ? item.change.toFixed(2) : '--'} (${item.change_percent != null ? item.change_percent.toFixed(2) + '%' : '--'})</div>
+              <div style="margin-top:6px;color:#666;font-size:13px;">${item.timestamp}</div>
+            </div>`;
+        }).join('');
+      } catch (error) {
+        indicesEl.innerHTML = '<div>指数数据加载失败，请刷新页面。</div>';
+      }
+    }
+
+    function formatNumber(value) {
+      return value == null ? '--' : Number(value).toFixed(2);
+    }
+
+    function filterParams() {
+      switch (filterMode) {
+        case 'up': return { min_pct: 0.01 };
+        case 'down': return { max_pct: -0.01 };
+        case 'limit_up': return { min_pct: 9.8 };
+        case 'limit_down': return { max_pct: -9.8 };
+        default: return {};
+      }
+    }
+
+    function updateSortIndicators() {
+      // arrow span 始终存在(固定宽度占位)，仅改文字，避免点击排序时列宽跳动
+      document.querySelectorAll('th.sortable').forEach(th => {
+        const active = th.dataset.sort === sortBy;
+        th.classList.toggle('active', active);
+        const arrow = th.querySelector('.arrow');
+        if (arrow) arrow.textContent = active ? (sortOrder === 'asc' ? '▲' : '▼') : '';
+      });
+    }
+
+    async function loadStockPage() {
+      const market = marketSelect.value;
+      const query = searchInput.value.trim();
+      tableStatus.textContent = '加载中...';
+      try {
+        const params = new URLSearchParams({
+          page, page_size: pageSize, market, query,
+          sort_by: sortBy, order: sortOrder, ...filterParams(),
+        });
+        if (trendMode && trendMode !== 'all') params.set('trend', trendMode);
+        const res = await fetch(`/api/stocks/list?${params.toString()}`);
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || '加载失败');
+        }
+        const data = await res.json();
+        total = data.total;
+        pageInfo.textContent = `第 ${data.page} 页 / ${Math.max(1, Math.ceil(total / pageSize))} 页（共 ${total} 条）`;
+        stockTable.innerHTML = data.stocks.map(stock => {
+          const sign = stock.change >= 0 ? 'positive' : 'negative';
+          let rowCls = '', alertBadge = '—';
+          if (stock.alert === 'big_buy') { rowCls = 'alert-buy'; alertBadge = '<span class="badge badge-buy">大买</span>'; }
+          else if (stock.alert === 'big_sell') { rowCls = 'alert-sell'; alertBadge = '<span class="badge badge-sell">大卖</span>'; }
+          else if (stock.alert === 'big_trade') { alertBadge = '<span class="badge badge-trade">放量</span>'; }
+          const ratio = stock.volume_ratio != null ? Number(stock.volume_ratio).toFixed(1) + '×' : '--';
+          const ratioCls = (stock.volume_ratio != null && stock.volume_ratio >= 3) ? 'vol-spike' : '';
+          return `
+            <tr class="${rowCls}" data-symbol="${stock.symbol}">
+              <td>${stock.symbol}</td>
+              <td>${stock.name}</td>
+              <td class="${sign}">${formatNumber(stock.current_price)}</td>
+              <td class="${sign}">${stock.change == null ? '--' : Number(stock.change).toFixed(2)}</td>
+              <td class="${sign}">${stock.change_percent == null ? '--' : Number(stock.change_percent).toFixed(2) + '%'}</td>
+              <td>${formatNumber(stock.high)}</td>
+              <td>${formatNumber(stock.low)}</td>
+              <td>${stock.volume != null ? Number(stock.volume).toLocaleString() : '--'}</td>
+              <td>${formatLarge(stock.volume_delta)}</td>
+              <td>${formatLarge(stock.volume_baseline)}</td>
+              <td class="${ratioCls}">${ratio}</td>
+              <td>${alertBadge}</td>
+              <td>${stock.trend}</td>
+            </tr>`;
+        }).join('');
+        tableStatus.textContent = total ? '点击股票行查看近期走势图。' : '没有符合筛选条件的股票。';
+        updateSortIndicators();
+        document.querySelectorAll('#stockTable tr').forEach(row => {
+          row.addEventListener('click', () => selectStock(row.dataset.symbol));
+        });
+      } catch (error) {
+        stockTable.innerHTML = '';
+        tableStatus.textContent = error.message;
+      }
+    }
+
+    async function selectStock(symbol) {
+      selectedStock.textContent = `加载 ${symbol} 的走势图...`;
+      try {
+        const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/history`);
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.detail || '获取历史数据失败');
+        }
+        const data = await res.json();
+        selectedStock.innerHTML = `<strong>${data.name} (${data.symbol})</strong> - 最近 ${data.history.length} 个交易日收盘价`;
+        renderChart(data.history.map(item => item.date), data.history.map(item => item.close));
+      } catch (error) {
+        selectedStock.textContent = error.message;
+      }
+      loadBidAsk(symbol);
+    }
+
+    function fmtLot(v) { return v == null ? '--' : Math.round(Number(v) / 100).toLocaleString() + '手'; }
+    function fmtPrice(p) { return p == null ? '--' : Number(p).toFixed(2); }
+
+    function renderBidAsk(d) {
+      const askRows = [4, 3, 2, 1, 0].map(i => {
+        const a = d.asks[i];
+        return `<tr class="ba-ask"><td class="ba-label">卖${a.level}</td><td class="ba-price">${fmtPrice(a.price)}</td><td class="ba-vol">${fmtLot(a.volume)}</td></tr>`;
+      }).join('');
+      const bidRows = [0, 1, 2, 3, 4].map(i => {
+        const b = d.bids[i];
+        return `<tr class="ba-bid"><td class="ba-label">买${b.level}</td><td class="ba-price">${fmtPrice(b.price)}</td><td class="ba-vol">${fmtLot(b.volume)}</td></tr>`;
+      }).join('');
+      const midCls = (d.current_price != null && d.previous_close != null && d.current_price >= d.previous_close) ? 'positive' : 'negative';
+      bidAsk.innerHTML = `
+        <h3>五档盘口 <span style="font-weight:400;color:#6b7280;font-size:13px;">${d.timestamp || ''}</span></h3>
+        <table><tbody>
+          ${askRows}
+          <tr class="ba-mid"><td>现价</td><td class="${midCls}">${fmtPrice(d.current_price)}</td><td>昨收 ${fmtPrice(d.previous_close)}</td></tr>
+          ${bidRows}
+        </tbody></table>`;
+    }
+
+    async function loadBidAsk(symbol) {
+      bidAsk.innerHTML = '<h3>五档盘口</h3><div class="status">加载中...</div>';
+      try {
+        const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/bidask`);
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取五档失败'); }
+        renderBidAsk(await res.json());
+      } catch (error) {
+        bidAsk.innerHTML = `<h3>五档盘口</h3><div class="status">${error.message}</div>`;
+      }
+    }
+
+    function renderChart(labels, values) {
+      if (!stockChart) {
+        stockChart = new Chart(chartCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [{
+              label: '收盘价',
+              data: values,
+              borderColor: '#2563eb',
+              backgroundColor: 'rgba(37,99,235,0.16)',
+              tension: 0.25,
+              fill: true,
+            }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+              x: { display: true, grid: { color: '#f3f4f6' } },
+              y: { display: true, grid: { color: '#f3f4f6' } },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: { mode: 'index', intersect: false },
+            },
+          },
+        });
+      } else {
+        stockChart.data.labels = labels;
+        stockChart.data.datasets[0].data = values;
+        stockChart.update();
+      }
+    }
+
+    // ===== 关注列表 / 大户异动监控 =====
+    function formatLarge(v) {
+      if (v == null) return '--';
+      v = Number(v);
+      if (v >= 1e8) return (v / 1e8).toFixed(2) + '亿';
+      if (v >= 1e4) return (v / 1e4).toFixed(1) + '万';
+      return v.toLocaleString();
+    }
+
+    function renderAlertBar(alerts) {
+      if (!alerts || !alerts.length) { alertBar.className = 'alert-bar hidden'; return; }
+      const dir = alerts[0].alert === 'big_sell' ? 'sell' : 'buy';
+      alertBar.className = 'alert-bar ' + dir;
+      const txt = alerts.map(a => {
+        const label = a.alert === 'big_buy' ? '🟢大买' : a.alert === 'big_sell' ? '🔴大卖' : '⚡放量';
+        const ratio = a.ratio != null ? `放量${Number(a.ratio).toFixed(1)}×` : '';
+        const pct = a.change_percent != null ? `${Number(a.change_percent).toFixed(2)}%` : '';
+        return `${label} ${a.name}(${a.symbol}) ${ratio} ${pct}`;
+      }).join('　|　');
+      alertText.textContent = '⚠ 异动提醒：' + txt;
+    }
+
+    function renderWatchTable(stocks) {
+      if (!stocks.length) { watchTable.innerHTML = ''; return; }
+      watchTable.innerHTML = stocks.map(s => {
+        const sign = s.change >= 0 ? 'positive' : 'negative';
+        let rowCls = '', badge = '—';
+        if (s.alert === 'big_buy') { rowCls = 'alert-buy'; badge = '<span class="badge badge-buy">大买</span>'; }
+        else if (s.alert === 'big_sell') { rowCls = 'alert-sell'; badge = '<span class="badge badge-sell">大卖</span>'; }
+        else if (s.alert === 'big_trade') { badge = '<span class="badge badge-trade">放量</span>'; }
+        const ratio = s.volume_ratio != null ? Number(s.volume_ratio).toFixed(1) + '×' : '--';
+        const ratioCls = (s.volume_ratio != null && s.volume_ratio >= 3) ? 'vol-spike' : '';
+        return `
+          <tr class="${rowCls}" data-symbol="${s.symbol}">
+            <td>${s.symbol}</td>
+            <td>${s.name}</td>
+            <td class="${sign}">${formatNumber(s.current_price)}</td>
+            <td class="${sign}">${s.change_percent == null ? '--' : Number(s.change_percent).toFixed(2) + '%'}</td>
+            <td>${formatLarge(s.volume_delta)}</td>
+            <td>${formatLarge(s.volume_baseline)}</td>
+            <td class="${ratioCls}">${ratio}</td>
+            <td>${badge}</td>
+            <td><button class="del-btn" data-symbol="${s.symbol}">删除</button></td>
+          </tr>`;
+      }).join('');
+      // 点击关注行查看走势图（删除按钮除外）
+      watchTable.querySelectorAll('tr').forEach(tr =>
+        tr.addEventListener('click', () => selectStock(tr.dataset.symbol)));
+      watchTable.querySelectorAll('.del-btn').forEach(btn =>
+        btn.addEventListener('click', (e) => { e.stopPropagation(); removeWatch(btn.dataset.symbol); }));
+    }
+
+    async function loadWatchlist() {
+      try {
+        const res = await fetch('/api/watchlist');
+        if (!res.ok) {
+          if (res.status === 503) { watchStatus.textContent = '行情数据加载中，请稍候...'; return; }
+          throw new Error('关注列表加载失败');
+        }
+        const data = await res.json();
+        renderWatchTable(data.stocks);
+        renderAlertBar(data.alerts);
+        watchStatus.textContent = data.stocks.length
+          ? `共 ${data.stocks.length} 只 · 每 ${data.refresh_interval}s 监控 · 更新于 ${data.updated_at}`
+          : '关注列表为空。添加股票后，系统每 30 秒监控其即时成交量，发现突然大买/大卖会强提醒。';
+      } catch (error) {
+        watchStatus.textContent = error.message;
+      }
+    }
+
+    async function addWatch() {
+      const symbol = watchInput.value.trim();
+      if (!symbol) return;
+      addWatchBtn.disabled = true;
+      try {
+        const res = await fetch('/api/watchlist', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol }),
+        });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '添加失败'); }
+        watchInput.value = '';
+        await loadWatchlist();
+      } catch (error) {
+        watchStatus.textContent = error.message;
+      } finally {
+        addWatchBtn.disabled = false;
+      }
+    }
+
+    async function removeWatch(symbol) {
+      try {
+        await fetch('/api/watchlist/' + encodeURIComponent(symbol), { method: 'DELETE' });
+        await loadWatchlist();
+      } catch (error) { /* 忽略 */ }
+    }
+
+    addWatchBtn.addEventListener('click', addWatch);
+    watchInput.addEventListener('keydown', e => { if (e.key === 'Enter') addWatch(); });
+
+    // 表头点击排序：点同一列切换升/降序，点不同列默认升序
+    document.querySelectorAll('th.sortable').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.sort;
+        if (sortBy === key) { sortOrder = sortOrder === 'asc' ? 'desc' : 'asc'; }
+        else { sortBy = key; sortOrder = 'asc'; }
+        page = 1;
+        loadStockPage();
+      });
+    });
+    // 点击术语问号只看说明，不触发列排序
+    document.querySelectorAll('th .help').forEach(h => h.addEventListener('click', e => e.stopPropagation()));
+    // 涨跌幅筛选
+    filterSelect.addEventListener('change', () => { filterMode = filterSelect.value; page = 1; loadStockPage(); });
+    // 趋势筛选
+    trendSelect.addEventListener('change', () => { trendMode = trendSelect.value; page = 1; loadStockPage(); });
+
+    searchBtn.addEventListener('click', () => { page = 1; loadStockPage(); });
+    prevPage.addEventListener('click', () => { if (page > 1) { page -= 1; loadStockPage(); } });
+    nextPage.addEventListener('click', () => { if (page * pageSize < total) { page += 1; loadStockPage(); } });
+    window.addEventListener('load', () => {
+      loadIndices();
+      loadStockPage();
+      loadWatchlist();
+      setInterval(loadWatchlist, 10000);   // 每 10 秒刷新关注列表与告警
+      setInterval(loadIndices, 30000);     // 指数 30 秒刷新
+    });
+  </script>
+</body>
+</html>

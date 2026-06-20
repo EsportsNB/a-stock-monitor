@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+logs/
+api_resp.txt
+api_result.json
