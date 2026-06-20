@@ -12,8 +12,8 @@ from typing import List, Optional
 
 CACHE_TTL_SECONDS = 30
 # 关注列表要做“即时成交量/大户异动”监控，刷新越快越灵敏。
-# 绕过代理后全市场单次拉取约 15s，30s 间隔兼顾灵敏度与负载。
-CACHE_REFRESH_INTERVAL = 30
+# 绕过代理后全市场单次拉取约 15s，15s 间隔能进一步提升实时性，但负载也会更高。
+CACHE_REFRESH_INTERVAL = 15
 
 # ---- 异动检测参数 ----
 VOLUME_HISTORY_LEN = 20      # 每只股票保留最近 N 次成交量增量，用于计算基线
@@ -766,3 +766,97 @@ def get_bid_ask(symbol: str) -> dict:
         "asks": asks,   # 卖一(最低卖价)→卖五
         "timestamp": f"{data[30]} {data[31]}" if len(data) > 31 else "",
     }
+
+
+def _poll_watchlist_once() -> None:
+    """Fetch minimal realtime fields for the current watchlist from Sina hq API
+    and update the cumulative caches used by _attach_market_metrics.
+
+    This is a lightweight, best-effort updater that keeps `_market_prev_*` in
+    sync between full-market refreshes so watchlist deltas appear promptly.
+    """
+    codes = load_watchlist()
+    if not codes:
+        return
+
+    # Sina supports multi-code queries separated by commas: list=sh600519,sz000001
+    query = ",".join(codes)
+    try:
+        resp = requests.get(f"https://hq.sinajs.cn/list={query}", timeout=6)
+        resp.encoding = "gbk"
+    except Exception as exc:
+        print(f"Watchlist poll failed (request): {exc}")
+        return
+
+    text = resp.text.strip()
+    if not text:
+        return
+
+    # Response contains one line per symbol, each line like:
+    # var hq_str_sh600519="name,open,prev,current,high,low,...,volume,turnover,...,date,time";
+    for line in text.splitlines():
+        if '"' not in line:
+            continue
+        try:
+            payload = line.split('"', 1)[1].rsplit('"', 1)[0]
+            parts = payload.split(",")
+            if len(parts) < 5:
+                continue
+            # Determine symbol key from the var prefix: var hq_str_sh600519=
+            prefix = line.split('=')[0]
+            key = None
+            if "hq_str_" in prefix:
+                key = prefix.split("hq_str_")[-1].strip()
+            else:
+                # fallback: skip
+                continue
+
+            # Parse current price
+            try:
+                price = _parse_number(parts[3])
+            except Exception:
+                price = None
+
+            # Try common indices for cumulative volume/turnover; best-effort
+            vol = None
+            tov = None
+            # many sinajs payloads place volume at index 8 and amount at 9 (best-effort)
+            if len(parts) > 8:
+                vol = _parse_number(parts[8])
+            if len(parts) > 9:
+                tov = _parse_number(parts[9])
+
+            # Update global caches used by _attach_market_metrics. For providers
+            # that emit trade sizes instead of cumulative volumes we add up values
+            # as a fallback; here we assume Sina returns cumulative totals.
+            if price is not None:
+                _market_prev_price[key] = price
+            if vol is not None:
+                _market_prev_volume[key] = vol
+                # keep delta history warm if possible: append small zero delta
+                hist = _market_delta_history.setdefault(key, deque(maxlen=VOLUME_HISTORY_LEN))
+                # don't append here — deltas are computed when full snapshot runs
+            if tov is not None:
+                _market_prev_turnover[key] = tov
+        except Exception as e:
+            # non-fatal; continue with other symbols
+            print("Watchlist poll parse error:", e)
+
+
+def start_watchlist_polling(interval_seconds: int = 2):
+    """Start a background thread that polls only the user's watchlist frequently.
+
+    This keeps `_market_prev_*` values fresh so that the main full-market
+    refresh can compute immediate deltas for the watchlist without waiting
+    for the next full refresh.
+    """
+    def _loop():
+        while True:
+            try:
+                _poll_watchlist_once()
+            except Exception as exc:
+                print(f"Watchlist poll loop error: {exc}")
+            time.sleep(max(1, interval_seconds))
+
+    t = Thread(target=_loop, daemon=True)
+    t.start()
