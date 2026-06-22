@@ -1,3 +1,5 @@
+import threading
+from datetime import datetime
 from typing import List, Optional
 
 from fastapi import FastAPI, HTTPException, Query, Path
@@ -26,6 +28,15 @@ from .stock_monitor import (
     remove_from_watchlist,
     spot_source,
     start_background_cache_refresh,
+    start_watchlist_polling,
+)
+from .ai_predictor import (
+    load_prediction,
+    review_pending,
+    review_prediction,
+    run_daily_prediction,
+    update_summary,
+    zhipu_available,
 )
 app = FastAPI(title="中国大陆股市实时监控服务")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
@@ -37,6 +48,8 @@ def startup_event():
     disable_proxy_for_china_data()
     # 后台预热缓存，不阻塞启动，服务可立即响应
     start_background_cache_refresh()
+    # 关注列表高频刷新（独立通道，比全市场 30s 更实时）
+    start_watchlist_polling()
 
 
 def _require_cache_ready():
@@ -57,6 +70,7 @@ def health():
         "status": "ok" if ready else "warming_up",
         "cache_ready": ready,
         "data_source": spot_source(),
+        "ai_ready": zhipu_available(),
     }
 
 
@@ -138,3 +152,72 @@ async def watchlist_add(req: AddWatchRequest):
 async def watchlist_remove(symbol: str = Path(..., description="股票代码，支持 600519 / 600519.SH")):
     codes = await run_in_threadpool(remove_from_watchlist, symbol)
     return {"codes": codes}
+
+
+# ---- AI 涨跌预测 ----
+
+_predict_status = {"running": False, "last_date": None, "error": None}
+
+
+@app.post("/api/predict/run")
+async def predict_run(web_search: bool = Query(True, description="是否启用联网搜索新闻")):
+    """触发当日预测（后台运行，约几分钟）。立即返回，结果用 GET /api/predict/today 查看。"""
+    _require_cache_ready()
+    if not zhipu_available():
+        raise HTTPException(status_code=503, detail="未配置 ZHIPU_API_KEY 环境变量，无法调用 AI 模型。请到 https://open.bigmodel.cn 免费获取后设置。")
+    if _predict_status["running"]:
+        return {"status": "already_running", "message": "预测正在进行中，请稍候。"}
+
+    def _job():
+        _predict_status.update(running=True, error=None)
+        try:
+            rec = run_daily_prediction(use_web_search=web_search)
+            _predict_status["last_date"] = rec["date"]
+        except Exception as exc:  # noqa: BLE001
+            _predict_status["error"] = str(exc)
+            print(f"AI 预测任务失败：{exc}")
+        finally:
+            _predict_status["running"] = False
+
+    threading.Thread(target=_job, daemon=True).start()
+    return {"status": "started", "message": "预测已在后台开始，约几分钟后用 GET /api/predict/today 查看结果。"}
+
+
+@app.post("/api/predict/review/{date}")
+async def predict_review(date: str = Path(..., description="要复盘的预测日期 YYYY-MM-DD（在其次日收盘后调用）")):
+    _require_cache_ready()
+    try:
+        return await run_in_threadpool(review_prediction, date)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.post("/api/predict/review-pending")
+async def predict_review_pending():
+    """复盘最近一个未复盘的预测（供每日调度调用，自动对上一交易日的预测打分）。"""
+    _require_cache_ready()
+    rec = await run_in_threadpool(review_pending)
+    if rec is None:
+        return {"status": "nothing_to_review"}
+    return rec
+
+
+@app.get("/api/predict/status")
+def predict_status():
+    return _predict_status
+
+
+@app.get("/api/predict/today")
+def predict_today():
+    rec = load_prediction(datetime.now().strftime("%Y-%m-%d"))
+    if rec is None:
+        return {"status": "no_prediction", "running": _predict_status["running"], "error": _predict_status["error"]}
+    return rec
+
+
+@app.get("/api/predict/{date}")
+def predict_get(date: str = Path(..., description="预测日期 YYYY-MM-DD")):
+    rec = load_prediction(date)
+    if rec is None:
+        raise HTTPException(status_code=404, detail=f"未找到 {date} 的预测记录")
+    return rec

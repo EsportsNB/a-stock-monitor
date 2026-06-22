@@ -36,6 +36,13 @@ _market_prev_turnover = {}
 _market_prev_price = {}
 _market_delta_history = {}      # full_code -> deque[成交量增量]
 
+# 关注列表高频刷新通道（独立于全市场 30s 刷新，用独立状态避免污染全市场基线）。
+WATCH_POLL_INTERVAL = 8         # 关注列表单独刷新间隔（秒）
+_watch_prev_volume = {}
+_watch_prev_price = {}
+_watch_delta_history = {}       # full_code -> deque[成交量增量]
+_watch_cache = {"items": None, "at": None}   # 关注列表高频快照
+
 # 关注列表持久化
 WATCHLIST_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "watchlist.json"
@@ -299,8 +306,9 @@ def _refresh_spot_cache():
 
 
 def _refresh_index_cache():
+    df = _fetch_index_data()   # 网络请求在锁外，避免阻塞其他读者
     with _cache_lock:
-        _cache["index_df"] = _fetch_index_data()
+        _cache["index_df"] = df
         _cache["index_at"] = datetime.now()
 
 
@@ -704,39 +712,39 @@ def _median(values) -> Optional[float]:
 
 
 def get_watchlist_data() -> dict:
-    """返回关注列表的实时数据。即时成交量/基线/放量倍数/异动等指标已由
-    _build_stock_item 从全市场快照的指标列读取，这里直接复用、并汇总异动。"""
+    """返回关注列表实时数据。每次按当前 watchlist 文件对齐：
+    高频缓存（8s 刷新、含即时成交量/异动）里有的直接用；刚加入、缓存还没轮询到的，
+    立即用全市场快照补上；已删除的立即剔除。这样加/减关注后面板即时生效，不必等下一次轮询。"""
     codes = load_watchlist()
-    spot = get_spot_data()
-    code_col = spot["代码"].astype(str) if spot is not None else None
-    stocks = []
-    alerts = []
-    for full_code in codes:
-        if code_col is None:
-            continue
-        row = spot.loc[code_col == full_code]
-        if row.empty:
-            continue
-        base = _build_stock_item(row.iloc[0])
-        stocks.append(base)
-        if base.get("alert"):
-            alerts.append({
-                "symbol": base["symbol"],
-                "name": base["name"],
-                "alert": base["alert"],
-                "alert_level": base.get("alert_level", 0),
-                "volume_delta": base.get("volume_delta"),
-                "turnover_delta": base.get("turnover_delta"),
-                "ratio": base.get("volume_ratio"),
-                "change_percent": base["change_percent"],
-                "current_price": base["current_price"],
-            })
+    want = [(_full_code_to_symbol(c), c) for c in codes]
+
+    with _cache_lock:
+        cached = _watch_cache.get("items")
+        watch_at = _watch_cache.get("at")
+
+    if cached is not None:
+        by_symbol = {it["symbol"]: it for it in cached}
+        interval = WATCH_POLL_INTERVAL
+        updated = (watch_at or datetime.now()).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        by_symbol = {}
+        interval = CACHE_REFRESH_INTERVAL
+        updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    # 缓存里缺的代码（刚加入还没轮询到），用全市场快照即时补全
+    missing = [full for sym, full in want if sym not in by_symbol]
+    if missing:
+        for it in _watchlist_from_spot(missing):
+            by_symbol[it["symbol"]] = it
+
+    # 严格按当前关注列表顺序输出，已删除的自然被排除
+    items = [by_symbol[sym] for sym, _ in want if sym in by_symbol]
 
     return {
-        "stocks": stocks,
-        "alerts": alerts,
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "refresh_interval": CACHE_REFRESH_INTERVAL,
+        "stocks": items,
+        "alerts": _extract_watch_alerts(items),
+        "updated_at": updated,
+        "refresh_interval": interval,
     }
 
 
@@ -783,3 +791,159 @@ def get_bid_ask(symbol: str) -> dict:
         "asks": asks,   # 卖一(最低卖价)→卖五
         "timestamp": f"{data[30]} {data[31]}" if len(data) > 31 else "",
     }
+
+
+# ============================================================
+# 关注列表高频刷新（独立于全市场，用新浪多代码接口，几只一次请求很快）
+# ============================================================
+
+def _fetch_sina_quotes(codes: List[str]) -> dict:
+    """批量拉取关注列表的新浪实时行情，返回 {full_code: 逗号分隔字段列表}。"""
+    if not codes:
+        return {}
+    resp = requests.get(
+        f"https://hq.sinajs.cn/list={','.join(codes)}",
+        headers={"Referer": "https://finance.sina.com.cn"},
+        timeout=6,
+    )
+    resp.encoding = "gbk"
+    out = {}
+    for line in resp.text.strip().splitlines():
+        if "hq_str_" not in line or '"' not in line:
+            continue
+        code = line.split("=")[0].split("hq_str_")[-1].strip()
+        payload = line.split('"', 1)[1].rsplit('"', 1)[0]
+        parts = payload.split(",")
+        if len(parts) >= 32 and parts[0]:
+            out[code] = parts
+    return out
+
+
+def _build_watch_item(full_code, parts, vol_delta, baseline, ratio, alert, level) -> dict:
+    """从新浪实时字段构造关注列表条目（含即时成交量/异动）。"""
+    price = _parse_number(parts[3])
+    prev_close = _parse_number(parts[2])
+    change = (price - prev_close) if (price is not None and prev_close) else None
+    change_pct = (change / prev_close * 100) if (change is not None and prev_close) else None
+    return {
+        "symbol": _full_code_to_symbol(full_code),
+        "name": parts[0],
+        "current_price": price,
+        "previous_close": prev_close,
+        "change": round(change, 2) if change is not None else 0.0,
+        "change_percent": round(change_pct, 2) if change_pct is not None else 0.0,
+        "high": _parse_number(parts[4]),
+        "low": _parse_number(parts[5]),
+        "open": _parse_number(parts[1]),
+        "volume": _parse_number(parts[8]),
+        "turnover": _parse_number(parts[9]),
+        "volume_delta": vol_delta,
+        "turnover_delta": None,
+        "volume_baseline": baseline,
+        "volume_ratio": ratio,
+        "alert": alert,
+        "alert_level": level,
+        "trend": describe_trend((change_pct or 0) / 100.0, price, prev_close),
+        "summary": None,
+        "timestamp": f"{parts[30]} {parts[31]}" if len(parts) > 31 else datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def _poll_watchlist_once():
+    """关注列表高频刷新一次：拉新浪实时行情，用【独立状态】算即时成交量与异动。"""
+    codes = load_watchlist()
+    if not codes:
+        with _cache_lock:
+            _watch_cache["items"] = []
+            _watch_cache["at"] = datetime.now()
+        return
+    quotes = _fetch_sina_quotes(codes)
+    items = []
+    for code in codes:
+        parts = quotes.get(code)
+        if not parts:
+            continue
+        cur_vol = _parse_number(parts[8]) or 0.0
+        cur_price = _parse_number(parts[3])
+        prev_vol = _watch_prev_volume.get(code)
+        prev_price = _watch_prev_price.get(code)
+
+        vol_delta = None
+        price_delta = None
+        if prev_vol is not None:
+            vol_delta = max(cur_vol - prev_vol, 0.0)
+        if prev_price is not None and cur_price is not None:
+            price_delta = cur_price - prev_price
+
+        baseline = ratio = None
+        alert = None
+        level = 0
+        if vol_delta is not None:
+            hist = _watch_delta_history.setdefault(code, deque(maxlen=VOLUME_HISTORY_LEN))
+            if len(hist) >= MIN_BASELINE_SAMPLES:
+                baseline = _median(hist)
+                if baseline and baseline > 0:
+                    ratio = vol_delta / baseline
+                    if vol_delta > 0:
+                        alert, level = _classify_alert(ratio, price_delta)
+            hist.append(vol_delta)
+
+        _watch_prev_volume[code] = cur_vol
+        if cur_price is not None:
+            _watch_prev_price[code] = cur_price
+
+        items.append(_build_watch_item(
+            code, parts, vol_delta, baseline,
+            round(ratio, 2) if ratio is not None else None, alert, level))
+
+    with _cache_lock:
+        _watch_cache["items"] = items
+        _watch_cache["at"] = datetime.now()
+
+
+def start_watchlist_polling(interval_seconds: int = WATCH_POLL_INTERVAL):
+    """启动关注列表高频刷新后台线程（独立于全市场刷新）。"""
+    def _loop():
+        while True:
+            try:
+                _poll_watchlist_once()
+            except Exception as exc:
+                print(f"Watchlist poll failed: {exc}")
+            time.sleep(max(2, interval_seconds))
+
+    Thread(target=_loop, daemon=True).start()
+
+
+def _watchlist_from_spot(codes: Optional[List[str]] = None) -> List[dict]:
+    """从全市场快照取指定代码的条目（codes 为空则取整个关注列表）。
+    用于高频缓存还没数据、或刚加入的股票还没轮询到时的即时补全。"""
+    if codes is None:
+        codes = load_watchlist()
+    spot = get_spot_data()
+    code_col = spot["代码"].astype(str) if spot is not None else None
+    if code_col is None:
+        return []
+    items = []
+    for full_code in codes:
+        row = spot.loc[code_col == full_code]
+        if not row.empty:
+            items.append(_build_stock_item(row.iloc[0]))
+    return items
+
+
+def _extract_watch_alerts(items: List[dict]) -> List[dict]:
+    alerts = []
+    for s in items:
+        if s.get("alert"):
+            alerts.append({
+                "symbol": s["symbol"],
+                "name": s["name"],
+                "alert": s["alert"],
+                "alert_level": s.get("alert_level", 0),
+                "volume_delta": s.get("volume_delta"),
+                "turnover_delta": s.get("turnover_delta"),
+                "ratio": s.get("volume_ratio"),
+                "change_percent": s["change_percent"],
+                "current_price": s["current_price"],
+            })
+    return alerts
