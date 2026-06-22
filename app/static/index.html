@@ -5,73 +5,93 @@
   <title>A股实时监控</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "微软雅黑", sans-serif; margin: 0; padding: 0; background: #f7f8fb; color: #222; }
+    :root {
+      --bg: #0b1220; --card: #151c2c; --card-2: #1b2336; --border: #2a3450;
+      --text: #e5e9f0; --muted: #94a3b8; --accent: #3b82f6; --th-bg: #1e2740; --hover: #222d47;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "微软雅黑", sans-serif; margin: 0; padding: 0; background: var(--bg); color: var(--text); }
     .container { max-width: 1760px; margin: 0 auto; padding: 24px; }
     h1, h2 { margin: 0 0 14px; }
-    .card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 12px 28px rgba(0,0,0,.06); margin-bottom: 18px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: 0 12px 28px rgba(0,0,0,.35); margin-bottom: 18px; }
     .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
     .input-box { flex: 1; min-width: 240px; }
-    input, select { width: 100%; padding: 12px 14px; border: 1px solid #d9d9d9; border-radius: 8px; font-size: 14px; }
-    button { padding: 12px 18px; border: none; border-radius: 8px; background: #2563eb; color: #fff; cursor: pointer; font-size: 14px; }
-    button:disabled { background: #94b3ff; cursor: not-allowed; }
-    .status { margin-top: 12px; color: #666; font-size: 14px; }
+    input, select { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; background: var(--card-2); color: var(--text); }
+    input::placeholder { color: var(--muted); }
+    button { padding: 12px 18px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; }
+    button:disabled { background: #33425f; color: #8a97ad; cursor: not-allowed; }
+    .status { margin-top: 12px; color: var(--muted); font-size: 14px; }
     table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { padding: 12px 10px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 14px; }
-    th { background: #fafafa; }
-    tr:hover { background: #f2f9ff; cursor: pointer; }
-    .positive { color: #16a34a; }
-    .negative { color: #dc2626; }
+    th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; font-size: 14px; }
+    th { background: var(--th-bg); color: var(--text); }
+    tr:hover { background: var(--hover); cursor: pointer; }
+    /* A股习惯：红涨绿跌（与欧美相反） */
+    .positive { color: #f87171; }   /* 涨 → 红 */
+    .negative { color: #4ade80; }   /* 跌 → 绿 */
     .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; }
     .chart-card { display: grid; gap: 18px; }
     .chart-box { min-height: 320px; }
-    .chart-tab { padding: 4px 14px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; color: #374151; }
-    .chart-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .chart-tab { padding: 4px 14px; font-size: 13px; border: 1px solid var(--border); border-radius: 4px; background: var(--card-2); cursor: pointer; color: var(--text); }
+    .chart-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
     #intradayVolChart { min-height: 70px !important; max-height: 70px !important; }
-    .summary-block { padding: 12px 14px; background: #f9fafb; border-radius: 10px; color: #333; }
+    .summary-block { padding: 12px 14px; background: var(--card-2); border-radius: 10px; color: var(--text); }
 
     /* —— 关注列表 / 大户异动告警 —— */
     .alert-bar { position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 12px;
       padding: 14px 20px; border-radius: 0 0 12px 12px; margin-bottom: 14px; font-size: 15px; font-weight: 700;
       box-shadow: 0 8px 22px rgba(0,0,0,.22); }
     .alert-bar.hidden { display: none; }
-    .alert-bar.buy  { background: #052e16; color: #bbf7d0; }
-    .alert-bar.sell { background: #450a0a; color: #fecaca; }
+    /* A股习惯：大买(资金流入)=红，大卖(资金流出)=绿 */
+    .alert-bar.buy  { background: #450a0a; color: #fecaca; }
+    .alert-bar.sell { background: #052e16; color: #bbf7d0; }
     .alert-lamp { width: 16px; height: 16px; border-radius: 50%; flex: none; }
-    .alert-bar.buy  .alert-lamp { background: #22c55e; animation: lampGreen .7s infinite; }
-    .alert-bar.sell .alert-lamp { background: #ef4444; animation: lampRed .7s infinite; }
+    .alert-bar.buy  .alert-lamp { background: #ef4444; animation: lampRed .7s infinite; }
+    .alert-bar.sell .alert-lamp { background: #22c55e; animation: lampGreen .7s infinite; }
     @keyframes lampGreen { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.95);} 50% { box-shadow: 0 0 0 9px rgba(34,197,94,0);} }
     @keyframes lampRed   { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.95);} 50% { box-shadow: 0 0 0 9px rgba(239,68,68,0);} }
-    @keyframes flashGreen { 0%,100% { background:#fff;} 50% { background:#bbf7d0;} }
-    @keyframes flashRed   { 0%,100% { background:#fff;} 50% { background:#fecaca;} }
-    tr.alert-buy  { animation: flashGreen 1s ease-in-out infinite; }
-    tr.alert-sell { animation: flashRed 1s ease-in-out infinite; }
+    @keyframes flashGreen { 0%,100% { background:var(--card);} 50% { background:#14361f;} }
+    @keyframes flashRed   { 0%,100% { background:var(--card);} 50% { background:#3a1414;} }
+    tr.alert-buy  { animation: flashRed 1s ease-in-out infinite; }
+    tr.alert-sell { animation: flashGreen 1s ease-in-out infinite; }
     tr.alert-buy td:first-child, tr.alert-sell td:first-child { font-weight: 800; }
     .badge { display:inline-block; padding:2px 9px; border-radius:10px; font-size:12px; font-weight:700; color:#fff; }
-    .badge-buy { background:#16a34a; }
-    .badge-sell { background:#dc2626; }
+    .badge-buy { background:#dc2626; }
+    .badge-sell { background:#16a34a; }
     .badge-trade { background:#f59e0b; }
     .del-btn { background:#ef4444; padding:6px 10px; font-size:12px; }
-    .vol-spike { color:#b45309; font-weight:800; }
+    .vol-spike { color:#fbbf24; font-weight:800; }
 
-    /* —— 列表与走势图并排布局 + 可排序表头 —— */
-    /* 走势图固定 480px，列表占剩余；窄屏(<1500)走势图移到下方，列表占满整宽 */
-    .list-chart-grid { display: grid; grid-template-columns: minmax(0, 1fr) 480px; gap: 18px; align-items: start; }
-    @media (max-width: 1500px) { .list-chart-grid { grid-template-columns: 1fr; } }
-    #chartCard { position: sticky; top: 12px; }
+    /* —— 走势图弹窗 —— */
+    .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+    .modal-mask.show { display: flex; }
+    .chart-modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; width: min(1100px, 95vw); max-height: 92vh; overflow-y: auto; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+    .day-nav { width: 26px; padding: 2px 0; font-size: 12px; background: var(--card-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+    .day-nav:hover:not(:disabled) { background: var(--hover); }
+    .day-nav:disabled { opacity: .35; cursor: not-allowed; }
+    /* —— 走势图双列布局 —— */
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 14px; }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+    .chart-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    /* 技术指标面板 */
+    .tech-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+    .tech-bias { padding:3px 10px; border-radius:12px; font-size:13px; font-weight:700; color:#fff; }
+    .tech-bias.bull { background:#dc2626; } .tech-bias.bear { background:#16a34a; } .tech-bias.neutral { background:#6b7280; }
+    .tech-sig { display:inline-block; padding:2px 8px; margin:2px 3px 2px 0; border-radius:10px; font-size:11px; background:#27314d; color:#a5b4fc; }
+    .tech-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:4px 14px; font-size:12px; color:var(--muted); }
+    .tech-grid b { color:var(--text); font-weight:600; }
     /* 五档报价 */
-    .bidask-block { margin-top: 18px; }
+    .bidask-block { margin-top: 18px; min-height: 200px; }
     .bidask-block h3 { margin: 0 0 8px; font-size: 15px; }
     .bidask-block table { width: 100%; margin-top: 0; }
-    .bidask-block td { padding: 5px 12px; font-size: 13px; border-bottom: 1px solid #f3f4f6; }
-    .ba-label { color: #6b7280; width: 56px; }
+    .bidask-block td { padding: 5px 12px; font-size: 13px; border-bottom: 1px solid var(--border); }
+    .ba-label { color: var(--muted); width: 56px; }
     .ba-price { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .ba-vol { text-align: right; color: #4b5563; font-variant-numeric: tabular-nums; }
-    .ba-ask .ba-price { color: #16a34a; }   /* 卖盘价(高于现价)用绿，沿用本页涨绿惯例 */
-    .ba-bid .ba-price { color: #dc2626; }   /* 买盘价用红 */
-    .ba-mid td { background: #eef2ff; font-weight: 700; text-align: center; color: #1e3a8a; }
+    .ba-vol { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .ba-ask .ba-price { color: #4ade80; }   /* 卖盘(asks)绿，A股盘口惯例(同花顺/东方财富) */
+    .ba-bid .ba-price { color: #f87171; }   /* 买盘(bids)红 */
+    .ba-mid td { background: #27314d; font-weight: 700; text-align: center; color: #c7d2fe; }
     /* 选中行高亮（适用于股票列表/关注/AI预测各表） */
-    tr.selected td { background: #dbeafe !important; }
-    tr.selected td:first-child { box-shadow: inset 3px 0 0 #2563eb; }
+    tr.selected td { background: #2b3a5e !important; }
+    tr.selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
     #watchToggleBtn.watched { background: #16a34a; }
     /* 股票列表中已关注股票的星星标识 */
     #stockListTable tr.watched-row td:first-child::before { content: '★ '; color: #f59e0b; }
@@ -94,15 +114,15 @@
     #stockListTable th:nth-child(12){width:64px}  /* 异动 */
     #stockListTable th:nth-child(13){width:84px}  /* 趋势 */
     th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
-    th.sortable:hover { background: #eef2ff; }
+    th.sortable:hover { background: #27314d; }
     /* 箭头固定宽度占位，避免点击排序时列宽跳动 */
-    th .arrow { display: inline-block; width: 12px; text-align: center; color: #2563eb; font-size: 12px; }
-    th.sortable.active { color: #2563eb; }
+    th .arrow { display: inline-block; width: 12px; text-align: center; color: #60a5fa; font-size: 12px; }
+    th.sortable.active { color: #60a5fa; }
     /* 术语帮助问号 + 原生 tooltip */
     .help { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px;
-      margin-left: 4px; border-radius: 50%; background: #cbd5e1; color: #fff; font-size: 10px; font-weight: 700;
+      margin-left: 4px; border-radius: 50%; background: #475569; color: #fff; font-size: 10px; font-weight: 700;
       cursor: help; vertical-align: middle; }
-    .help:hover { background: #2563eb; }
+    .help:hover { background: var(--accent); }
   </style>
 </head>
 <body>
@@ -123,7 +143,8 @@
       <div class="status" id="status">直接浏览全部股票，可切换市场并点击行查看走势图。</div>
     </div>
     <div class="card" id="indicesCard">
-      <h2>主要指数</h2>
+      <h2>主要指数 <span class="help" title="指数=一篮子股票的综合点位，反映整体市场涨跌。每张卡片：大数字是当前点位，下面是相比昨日收盘的涨跌点数和涨跌幅(%)。红涨绿跌(A股习惯)。指数涨说明今天大盘整体偏强。">?</span></h2>
+      <div class="status" style="margin-top:0;margin-bottom:6px;">反映A股大盘整体冷暖：三大指数同涨=市场普涨，同跌=普跌。</div>
       <div class="row" id="indices"></div>
     </div>
     <div class="card">
@@ -157,6 +178,7 @@
         <h2>🤖 AI 次日涨跌预测 <span class="help" title="收盘后用 GLM-4-Flash 联网搜公司新闻+量价技术面，预测下一交易日涨跌，挑预测涨幅高的推荐。次日收盘自动复盘对错。">?</span></h2>
         <div class="row" style="gap:8px;">
           <span class="status" id="predictAccuracy" style="margin:0;"></span>
+          <a href="/history" target="_blank" style="text-decoration:none;"><button style="background:#0ea5e9;">📅 历史与准确率</button></a>
           <button id="togglePredictBtn" style="background:#64748b;">查看全部</button>
           <button id="runPredictBtn">立即预测</button>
         </div>
@@ -164,13 +186,12 @@
       <div class="status" id="predictStatus">加载中...</div>
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>理由（含联网消息）</th></tr></thead>
+          <thead><tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>技术面</th><th>理由（含联网消息）</th></tr></thead>
           <tbody id="predictTable"></tbody>
         </table>
       </div>
     </div>
-    <div class="list-chart-grid">
-      <div class="card">
+    <div class="card">
         <div class="row" style="justify-content: space-between; align-items: center;">
           <h2>股票列表</h2>
           <div style="margin-left:12px;color:#6b7280;font-size:13px;" id="dataUpdatedAt">最近刷新：--</div>
@@ -224,33 +245,51 @@
         </div>
         <div class="status" id="tableStatus">正在加载数据...</div>
       </div>
-      <div class="card chart-card" id="chartCard">
-        <h2>股票走势图</h2>
-        <div class="row" style="justify-content: space-between; align-items: center; gap: 10px;">
-          <div class="summary-block" id="selectedStock" style="flex:1; margin:0;">未选择股票，点击任意股票行查看走势图。</div>
-          <button id="watchToggleBtn" style="display:none; white-space:nowrap;">★ 加入关注</button>
+      <div class="modal-mask" id="chartModal">
+       <div class="chart-modal" id="chartCard">
+        <div class="row" style="justify-content:space-between; align-items:center;">
+          <h2 style="margin:0;">股票走势图</h2>
+          <div class="row" style="gap:8px; align-items:center; flex:1; margin-left:16px;">
+            <div class="summary-block" id="selectedStock" style="flex:1; margin:0;">未选择股票，点击任意股票行查看走势图。</div>
+            <button id="watchToggleBtn" style="display:none; white-space:nowrap;">★ 加入关注</button>
+            <button id="chartModalClose" style="background:#475569; white-space:nowrap;">✕ 关闭</button>
+          </div>
         </div>
-        <!-- 图表 tab 切换 -->
-        <div style="margin-top:12px; display:flex; gap:6px; align-items:center;">
-          <button id="tabDaily" class="chart-tab active" onclick="switchChartTab('daily')">日K线</button>
-          <button id="tabIntraday" class="chart-tab" onclick="switchChartTab('intraday')">分时图</button>
-          <select id="intradayScale" style="display:none; margin-left:6px; font-size:12px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;">
-            <option value="1">1分钟</option>
-            <option value="5">5分钟</option>
-            <option value="15">15分钟</option>
-            <option value="30">30分钟</option>
-            <option value="60">60分钟</option>
-          </select>
-          <span id="intradayRefreshHint" style="display:none; font-size:11px; color:#6b7280; margin-left:4px;">每30秒自动刷新</span>
-        </div>
-        <div class="chart-box" style="margin-top:10px; display:block;" id="dailyChartBox"><canvas id="stockChart"></canvas></div>
-        <div class="chart-box" style="margin-top:10px; display:none;" id="intradayChartBox">
-          <canvas id="intradayChart"></canvas>
-          <canvas id="intradayVolChart" style="margin-top:6px; height:70px !important;"></canvas>
+        <div class="charts-grid">
+          <div>
+            <div class="chart-label">日K线 <span style="font-weight:400;color:#9ca3af;font-size:11px;">叠加 MA5/MA10/MA20</span></div>
+            <div style="position:relative; height:280px;"><canvas id="stockChart"></canvas></div>
+            <div id="techPanel" style="margin-top:10px;"></div>
+          </div>
+          <div>
+            <div class="chart-label" style="flex-wrap:wrap;">
+              分时图
+              <select id="intradayScale" style="font-size:12px; padding:2px 4px; border:1px solid var(--border); border-radius:4px; width:70px; background:var(--card-2); color:var(--text);">
+                <option value="1">1分钟</option>
+                <option value="5">5分钟</option>
+                <option value="15">15分钟</option>
+                <option value="30">30分钟</option>
+                <option value="60">60分钟</option>
+              </select>
+              <span style="display:inline-flex; align-items:center; gap:4px;">
+                <button id="intradayPrev" class="day-nav" title="前一交易日">◀</button>
+                <span id="intradayDate" style="font-size:12px; color:var(--text); min-width:84px; text-align:center;">--</span>
+                <button id="intradayNext" class="day-nav" title="后一交易日">▶</button>
+                <button id="intradayToday" class="day-nav" style="width:auto; padding:2px 8px;" title="回到当天">今天</button>
+              </span>
+              <span id="intradayLiveHint" style="font-size:11px; color:#6b7280;">每30秒自动刷新</span>
+              <span style="font-size:11px; color:#9ca3af; margin-left:4px;">- - 昨收</span>
+            </div>
+            <div style="position:relative; height:220px;"><canvas id="intradayChart"></canvas></div>
+            <div style="position:relative; height:60px; margin-top:6px;"><canvas id="intradayVolChart"></canvas></div>
+            <div style="font-size:11px; color:#6b7280; margin-top:4px;">
+              成交量：<span style="color:#dc2626;">█</span> 收&gt;开（价涨）&nbsp;&nbsp;<span style="color:#16a34a;">█</span> 收&lt;开（价跌）
+            </div>
+          </div>
         </div>
         <div id="bidAsk" class="bidask-block"></div>
+       </div>
       </div>
-    </div>
   </div>
 
   <script>
@@ -294,21 +333,28 @@
     let sortOrder = 'asc';
     let filterMode = 'all';
     let trendMode = 'all';
-    let activeChartTab = 'daily';   // 'daily' | 'intraday'
     let intradayTimer = null;
+    let intradayDayOffset = 0;   // 0=当天，1=前一交易日…
 
     async function loadIndices() {
       try {
         const res = await fetch('/api/indices');
         const data = await res.json();
+        const descMap = {
+          '上证指数': '上海交易所全部股票，权重偏大盘蓝筹（银行、白酒、券商等），最能代表A股整体。',
+          '深证成指': '深圳交易所500只代表股，制造业/科技成长占比高，弹性比上证大。',
+          '创业板指': '创业板100只成长股（新能源、医药、半导体等），波动最大、最“激进”。',
+        };
         indicesEl.innerHTML = data.map(item => {
           const sign = item.change_percent >= 0 ? 'positive' : 'negative';
+          const desc = descMap[item.name] || '';
           return `
-            <div style="min-width: 180px; background:#f2f7ff; border-radius:12px; padding:14px;">
+            <div style="min-width: 220px; flex:1; background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:14px;">
               <div><strong>${item.name}</strong></div>
-              <div style="margin-top:10px;font-size:20px;">${item.price != null ? item.price.toFixed(2) : '--'}</div>
-              <div class="${sign}" style="margin-top:6px;">${item.change != null ? item.change.toFixed(2) : '--'} (${item.change_percent != null ? item.change_percent.toFixed(2) + '%' : '--'})</div>
-              <div style="margin-top:6px;color:#666;font-size:13px;">${item.timestamp}</div>
+              <div style="margin-top:4px;color:var(--muted);font-size:12px;line-height:1.4;">${desc}</div>
+              <div style="margin-top:10px;font-size:20px;" title="当前点位">${item.price != null ? item.price.toFixed(2) : '--'}</div>
+              <div class="${sign}" style="margin-top:6px;" title="相比昨日收盘的涨跌点数与涨跌幅">${item.change != null ? item.change.toFixed(2) : '--'} (${item.change_percent != null ? item.change_percent.toFixed(2) + '%' : '--'})</div>
+              <div style="margin-top:6px;color:var(--muted);font-size:13px;">${item.timestamp}</div>
             </div>`;
         }).join('');
       } catch (error) {
@@ -407,17 +453,23 @@
       selectedSymbol = symbol;
       highlightSelected();
       updateWatchButton();
+      // 点击后弹出走势图弹窗
+      openChartModal();
       selectedStock.textContent = `加载 ${symbol} 的走势图...`;
+      // 选股时重置到当天分时
+      intradayDayOffset = 0;
       // 日K线与分时图并行加载
+      clearInterval(intradayTimer);
+      intradayTimer = setInterval(() => { if (selectedSymbol && intradayDayOffset === 0) loadIntraday(); }, 30000);
       const histPromise = fetch(`/api/stock/${encodeURIComponent(symbol)}/history`)
         .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.detail || '获取历史数据失败'); }))
         .then(data => {
           selectedStock.innerHTML = `<strong>${data.name} (${data.symbol})</strong> - 最近 ${data.history.length} 个交易日收盘价`;
           renderChart(data.history.map(item => item.date), data.history.map(item => item.close));
+          renderIndicators(data.indicators);
         })
         .catch(e => { selectedStock.textContent = e.message; });
-      const intradayPromise = activeChartTab === 'intraday' ? loadIntraday() : Promise.resolve();
-      await Promise.all([histPromise, intradayPromise]);
+      await Promise.all([histPromise, loadIntraday()]);
       loadBidAsk(symbol);
     }
 
@@ -470,10 +522,23 @@
     }
     watchToggleBtn.addEventListener('click', toggleWatch);
 
+    // ===== 走势图弹窗 开/关 =====
+    const chartModal = document.getElementById('chartModal');
+    function openChartModal() { chartModal.classList.add('show'); }
+    function closeChartModal() {
+      chartModal.classList.remove('show');
+      clearInterval(intradayTimer);   // 关闭弹窗即停止分时自动刷新
+      intradayTimer = null;
+    }
+    document.getElementById('chartModalClose').addEventListener('click', closeChartModal);
+    chartModal.addEventListener('click', e => { if (e.target === chartModal) closeChartModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeChartModal(); });
+
     function fmtLot(v) { return v == null ? '--' : Math.round(Number(v) / 100).toLocaleString() + '手'; }
     function fmtPrice(p) { return p == null ? '--' : Number(p).toFixed(2); }
 
     function renderBidAsk(d) {
+      const midCls = (d.current_price != null && d.previous_close != null && d.current_price >= d.previous_close) ? 'positive' : 'negative';
       const askRows = [4, 3, 2, 1, 0].map(i => {
         const a = d.asks[i];
         return `<tr class="ba-ask"><td class="ba-label">卖${a.level}</td><td class="ba-price">${fmtPrice(a.price)}</td><td class="ba-vol">${fmtLot(a.volume)}</td></tr>`;
@@ -482,18 +547,20 @@
         const b = d.bids[i];
         return `<tr class="ba-bid"><td class="ba-label">买${b.level}</td><td class="ba-price">${fmtPrice(b.price)}</td><td class="ba-vol">${fmtLot(b.volume)}</td></tr>`;
       }).join('');
-      const midCls = (d.current_price != null && d.previous_close != null && d.current_price >= d.previous_close) ? 'positive' : 'negative';
       bidAsk.innerHTML = `
         <h3>五档盘口 <span style="font-weight:400;color:#6b7280;font-size:13px;">${d.timestamp || ''}</span></h3>
-        <table><tbody>
-          ${askRows}
-          <tr class="ba-mid"><td>现价</td><td class="${midCls}">${fmtPrice(d.current_price)}</td><td>昨收 ${fmtPrice(d.previous_close)}</td></tr>
-          ${bidRows}
-        </tbody></table>`;
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:18px;">
+          <table><tbody>${askRows}</tbody></table>
+          <table><tbody>
+            <tr class="ba-mid"><td>现价</td><td class="${midCls}">${fmtPrice(d.current_price)}</td><td>昨收 ${fmtPrice(d.previous_close)}</td></tr>
+            ${bidRows}
+          </tbody></table>
+        </div>`;
     }
 
     async function loadBidAsk(symbol) {
-      bidAsk.innerHTML = '<h3>五档盘口</h3><div class="status">加载中...</div>';
+      // 仅首次（面板为空）显示加载提示；切换股票时保留旧内容直到新数据到达，避免塌缩闪烁
+      if (!bidAsk.innerHTML.trim()) bidAsk.innerHTML = '<h3>五档盘口</h3><div class="status">加载中...</div>';
       try {
         const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/bidask`);
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取五档失败'); }
@@ -503,70 +570,111 @@
       }
     }
 
+    // 客户端计算简单移动平均，用于在日K线上叠加 MA 线
+    function movingAvg(values, n) {
+      return values.map((_, i) => {
+        if (i < n - 1) return null;
+        let s = 0;
+        for (let j = i - n + 1; j <= i; j++) s += values[j];
+        return +(s / n).toFixed(3);
+      });
+    }
+
     function renderChart(labels, values) {
+      const maSet = (n, color) => ({
+        label: 'MA' + n, data: movingAvg(values, n),
+        borderColor: color, borderWidth: 1, pointRadius: 0, fill: false, tension: 0.25, spanGaps: true,
+      });
+      const datasets = [
+        { label: '收盘价', data: values, borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.16)', borderWidth: 1.5, tension: 0.25, fill: true, pointRadius: 0 },
+        maSet(5, '#f59e0b'), maSet(10, '#16a34a'), maSet(20, '#a855f7'),
+      ];
       if (!stockChart) {
         stockChart = new Chart(chartCanvas, {
           type: 'line',
-          data: {
-            labels,
-            datasets: [{
-              label: '收盘价',
-              data: values,
-              borderColor: '#2563eb',
-              backgroundColor: 'rgba(37,99,235,0.16)',
-              tension: 0.25,
-              fill: true,
-            }],
-          },
+          data: { labels, datasets },
           options: {
             responsive: true,
             maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
-              x: { display: true, grid: { color: '#f3f4f6' } },
-              y: { display: true, grid: { color: '#f3f4f6' } },
+              x: { display: true, grid: { color: '#222d47' }, ticks: { color: '#94a3b8' } },
+              y: { display: true, grid: { color: '#222d47' }, ticks: { color: '#94a3b8' } },
             },
             plugins: {
-              legend: { display: false },
+              legend: { display: true, labels: { boxWidth: 12, font: { size: 10 }, usePointStyle: true, color: '#cbd5e1' } },
               tooltip: { mode: 'index', intersect: false },
             },
           },
         });
       } else {
         stockChart.data.labels = labels;
-        stockChart.data.datasets[0].data = values;
+        stockChart.data.datasets = datasets;
         stockChart.update();
       }
     }
 
-    // ===== 分时图 =====
-    function switchChartTab(tab) {
-      activeChartTab = tab;
-      document.getElementById('tabDaily').classList.toggle('active', tab === 'daily');
-      document.getElementById('tabIntraday').classList.toggle('active', tab === 'intraday');
-      document.getElementById('dailyChartBox').style.display = tab === 'daily' ? 'block' : 'none';
-      document.getElementById('intradayChartBox').style.display = tab === 'intraday' ? 'block' : 'none';
-      document.getElementById('intradayScale').style.display = tab === 'intraday' ? '' : 'none';
-      document.getElementById('intradayRefreshHint').style.display = tab === 'intraday' ? '' : 'none';
-      if (tab === 'intraday') {
-        if (selectedSymbol) loadIntraday();
-        clearInterval(intradayTimer);
-        intradayTimer = setInterval(() => { if (selectedSymbol) loadIntraday(); }, 30000);
-      } else {
-        clearInterval(intradayTimer);
-        intradayTimer = null;
-      }
+    // 渲染技术指标面板（红=偏多/绿=偏空，沿用A股配色）
+    function renderIndicators(ind) {
+      const panel = document.getElementById('techPanel');
+      if (!ind) { panel.innerHTML = '<div class="status" style="margin:0;">历史数据不足，无法计算技术指标。</div>'; return; }
+      const biasCls = ind.bias === '偏多' ? 'bull' : ind.bias === '偏空' ? 'bear' : 'neutral';
+      const sigs = (ind.signals || []).map(s => `<span class="tech-sig">${s}</span>`).join('') || '<span class="status" style="margin:0;">无明显信号</span>';
+      const ma = ind.ma || {}, mac = ind.macd || {}, k = ind.kdj || {}, r = ind.rsi || {}, b = ind.boll || {}, vp = ind.volume_price || {};
+      const arrMap = { bull: '多头排列', bear: '空头排列', mixed: '均线纠缠' };
+      const posMap = { above_upper: '破上轨', below_lower: '破下轨', upper_half: '中轨上方', lower_half: '中轨下方' };
+      const crossMap = { golden: '金叉', dead: '死叉', hist_up: '红柱放大', hist_down: '绿柱放大' };
+      panel.innerHTML = `
+        <div class="tech-head">
+          <span class="tech-bias ${biasCls}">技术面 ${ind.bias} ${ind.score >= 0 ? '+' : ''}${ind.score}</span>
+          <span style="font-size:11px;color:#9ca3af;">综合 MA/MACD/KDJ/RSI/BOLL/量价 评分</span>
+        </div>
+        <div style="margin-bottom:8px;">${sigs}</div>
+        <div class="tech-grid">
+          <div>均线：<b>${arrMap[ma.arrangement] || '--'}</b>${ma.above_ma20 === true ? ' · 站上MA20' : ma.above_ma20 === false ? ' · 失守MA20' : ''}</div>
+          <div>MACD：DIF <b>${mac.dif ?? '--'}</b> 柱 <b>${mac.hist ?? '--'}</b> ${crossMap[mac.cross] || ''}</div>
+          <div>KDJ：K <b>${k.k ?? '--'}</b> D <b>${k.d ?? '--'}</b> J <b>${k.j ?? '--'}</b> ${crossMap[k.cross] || ''}</div>
+          <div>RSI：6日 <b>${r.rsi6 ?? '--'}</b> · 12日 ${r.rsi12 ?? '--'}</div>
+          <div>BOLL：<b>${posMap[b.position] || '--'}</b> 带宽 ${b.bandwidth ?? '--'}%</div>
+          <div>量价：<b>${vp.pattern || '--'}</b> 量比 ${vp.vol_ratio ?? '--'}</div>
+        </div>`;
     }
 
+    // ===== 分时图 =====
     document.getElementById('intradayScale').addEventListener('change', () => { if (selectedSymbol) loadIntraday(); });
+    // 日期切换：前一日 / 后一日 / 回到当天
+    document.getElementById('intradayPrev').addEventListener('click', () => { intradayDayOffset += 1; loadIntraday(); });
+    document.getElementById('intradayNext').addEventListener('click', () => { if (intradayDayOffset > 0) { intradayDayOffset -= 1; loadIntraday(); } });
+    document.getElementById('intradayToday').addEventListener('click', () => { intradayDayOffset = 0; loadIntraday(); });
+
+    function updateIntradayNav(data) {
+      document.getElementById('intradayDate').textContent = data.date || '无数据';
+      const prevBtn = document.getElementById('intradayPrev');
+      const nextBtn = document.getElementById('intradayNext');
+      const todayBtn = document.getElementById('intradayToday');
+      prevBtn.disabled = data.has_prev === false;
+      nextBtn.disabled = data.has_next === false;
+      todayBtn.disabled = intradayDayOffset === 0;
+      // 仅当天显示「自动刷新」提示，历史日隐藏
+      document.getElementById('intradayLiveHint').style.display = intradayDayOffset === 0 ? '' : 'none';
+    }
 
     async function loadIntraday() {
       if (!selectedSymbol) return;
       const scale = document.getElementById('intradayScale').value;
       try {
-        const res = await fetch(`/api/stock/${encodeURIComponent(selectedSymbol)}/intraday?scale=${scale}`);
+        const res = await fetch(`/api/stock/${encodeURIComponent(selectedSymbol)}/intraday?scale=${scale}&day_offset=${intradayDayOffset}`);
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取分时数据失败'); }
         const data = await res.json();
+        // 越界（请求的历史日无数据）：回退一步，提示到头了
+        if ((!data.bars || !data.bars.length) && intradayDayOffset > 0) {
+          intradayDayOffset -= 1;
+          document.getElementById('intradayDate').textContent = '已无更早数据';
+          document.getElementById('intradayPrev').disabled = true;
+          return;
+        }
         renderIntraday(data);
+        updateIntradayNav(data);
       } catch (e) {
         console.warn('分时图加载失败:', e.message);
       }
@@ -590,8 +698,8 @@
 
       const commonX = {
         display: true,
-        ticks: { maxTicksLimit: 12, font: { size: 11 }, color: '#6b7280' },
-        grid: { color: '#f3f4f6' },
+        ticks: { maxTicksLimit: 12, font: { size: 11 }, color: '#94a3b8' },
+        grid: { color: '#222d47' },
       };
 
       // --- 价格图 ---
@@ -628,9 +736,10 @@
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
               x: commonX,
-              y: { display: true, grid: { color: '#f3f4f6' }, ticks: { font: { size: 11 }, color: '#6b7280' } },
+              y: { display: true, grid: { color: '#222d47' }, ticks: { font: { size: 11 }, color: '#94a3b8' } },
             },
             plugins: {
               legend: { display: false },
@@ -662,11 +771,12 @@
             responsive: true,
             maintainAspectRatio: false,
             animation: false,
+            interaction: { mode: 'index', intersect: false },
             scales: {
               x: { ...commonX, display: false },
-              y: { display: true, ticks: { font: { size: 10 }, color: '#9ca3af', callback: v => v >= 10000 ? (v/10000).toFixed(0)+'万' : v }, grid: { color: '#f3f4f6' } },
+              y: { display: true, ticks: { font: { size: 10 }, color: '#94a3b8', callback: v => v >= 10000 ? (v/10000).toFixed(0)+'万' : v }, grid: { color: '#222d47' } },
             },
-            plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+            plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false, callbacks: { label: ctx => `成交量: ${Math.round(ctx.parsed.y).toLocaleString()}手` } } },
           },
         });
       } else {
@@ -676,6 +786,28 @@
         intradayVolChart.update('none');
       }
     }
+
+    // 量价联动：在一个图上移动时，另一个图同步高亮同一时刻
+    function linkCharts(getA, getB, canvasA, canvasB) {
+      const elA = document.getElementById(canvasA), elB = document.getElementById(canvasB);
+      const clear = c => { if (!c) return; c.setActiveElements([]); if (c.tooltip) c.tooltip.setActiveElements([], { x: 0, y: 0 }); c.update('none'); };
+      const sync = (src, tgt, e) => {
+        if (!src || !tgt) return;
+        const hit = src.getElementsAtEventForMode(e, 'index', { intersect: false }, true);
+        if (!hit.length) { clear(tgt); return; }
+        const idx = hit[0].index;
+        const active = tgt.data.datasets.map((_, di) => ({ datasetIndex: di, index: idx }));
+        const el = tgt.getDatasetMeta(0).data[idx];
+        tgt.setActiveElements(active);
+        if (tgt.tooltip) tgt.tooltip.setActiveElements(active, el ? { x: el.x, y: el.y } : { x: 0, y: 0 });
+        tgt.update('none');
+      };
+      elA.addEventListener('mousemove', e => sync(getA(), getB(), e));
+      elA.addEventListener('mouseleave', () => clear(getB()));
+      elB.addEventListener('mousemove', e => sync(getB(), getA(), e));
+      elB.addEventListener('mouseleave', () => clear(getA()));
+    }
+    linkCharts(() => intradayChart, () => intradayVolChart, 'intradayChart', 'intradayVolChart');
 
     // ===== 关注列表 / 大户异动监控 =====
     function formatLarge(v) {
@@ -691,7 +823,7 @@
       const dir = alerts[0].alert === 'big_sell' ? 'sell' : 'buy';
       alertBar.className = 'alert-bar ' + dir;
       const txt = alerts.map(a => {
-        const label = a.alert === 'big_buy' ? '🟢大买' : a.alert === 'big_sell' ? '🔴大卖' : '⚡放量';
+        const label = a.alert === 'big_buy' ? '🔴大买' : a.alert === 'big_sell' ? '🟢大卖' : '⚡放量';
         const ratio = a.ratio != null ? `放量${Number(a.ratio).toFixed(1)}×` : '';
         const pct = a.change_percent != null ? `${Number(a.change_percent).toFixed(2)}%` : '';
         return `${label} ${a.name}(${a.symbol}) ${ratio} ${pct}`;
@@ -819,7 +951,7 @@
       }
       togglePredictBtn.textContent = predictShowAll ? '只看推荐' : `查看全部 ${(d.predictions || []).length} 只`;
       if (!rows.length) {
-        predictTable.innerHTML = '<tr><td colspan="6" style="color:#666;">本次预测没有看涨的推荐，点「查看全部」看完整候选。</td></tr>';
+        predictTable.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">本次预测没有看涨的推荐，点「查看全部」看完整候选。</td></tr>';
         return;
       }
       predictTable.innerHTML = rows.map(p => {
@@ -827,11 +959,17 @@
         const dir = p.direction === 'up' ? '↑ 涨' : p.direction === 'down' ? '↓ 跌' : '— 平';
         const hitMark = p.hit === true ? ' ✅' : p.hit === false ? ' ❌' : '';
         const star = recSet.has(p.symbol) ? '🔮 ' : '';
+        let techCell = '--';
+        if (p.tech_bias) {
+          const tcls = p.tech_bias === '偏多' ? 'positive' : p.tech_bias === '偏空' ? 'negative' : '';
+          techCell = `<span class="${tcls}">${p.tech_bias} ${p.tech_score >= 0 ? '+' : ''}${p.tech_score}</span>`;
+        }
         return `<tr data-symbol="${p.symbol}">
           <td>${star}${p.symbol}</td><td>${p.name}</td>
           <td class="${cls}">${dir}</td>
           <td class="${cls}">${p.expected_pct == null ? '--' : p.expected_pct + '%'}${hitMark}</td>
           <td>${p.confidence == null ? '--' : Number(p.confidence).toFixed(2)}</td>
+          <td>${techCell}</td>
           <td>${p.reason || ''}</td></tr>`;
       }).join('');
       predictTable.querySelectorAll('tr[data-symbol]').forEach(tr =>

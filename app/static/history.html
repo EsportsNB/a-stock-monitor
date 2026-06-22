@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AI 预测历史与准确率</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220; --card: #151c2c; --card-2: #1b2336; --border: #2a3450;
+      --text: #e5e9f0; --muted: #94a3b8; --accent: #3b82f6; --th-bg: #1e2740; --hover: #222d47;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "微软雅黑", sans-serif; margin: 0; background: var(--bg); color: var(--text); }
+    .container { max-width: 1600px; margin: 0 auto; padding: 24px; }
+    h1, h2, h3 { margin: 0 0 12px; }
+    .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 18px; }
+    a.back { text-decoration: none; }
+    button { padding: 10px 16px; border: none; border-radius: 8px; background: var(--accent); color: #fff; cursor: pointer; font-size: 14px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; box-shadow: 0 12px 28px rgba(0,0,0,.35); margin-bottom: 18px; }
+    .summary { display: flex; gap: 24px; flex-wrap: wrap; }
+    .summary .stat { min-width: 150px; }
+    .summary .stat .num { font-size: 26px; font-weight: 700; margin-top: 4px; }
+    .muted { color: var(--muted); font-size: 13px; }
+    .grid { display: grid; grid-template-columns: 300px minmax(0,1fr); gap: 18px; align-items: start; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    /* 日期列表 */
+    .date-item { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 8px; cursor: pointer; background: var(--card-2); }
+    .date-item:hover { background: var(--hover); }
+    .date-item.active { border-color: var(--accent); box-shadow: inset 3px 0 0 var(--accent); }
+    .date-item .d { font-weight: 700; font-size: 15px; }
+    .date-item .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
+    .acc-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 700; color: #fff; }
+    .acc-high { background: #16a34a; } .acc-mid { background: #d97706; } .acc-low { background: #dc2626; } .acc-none { background: #475569; }
+    /* 明细表 */
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--border); text-align: left; font-size: 13px; }
+    th { background: var(--th-bg); white-space: nowrap; }
+    tr:hover td { background: var(--hover); }
+    /* A股习惯：红涨绿跌 */
+    .up { color: #f87171; } .down { color: #4ade80; } .flat { color: var(--muted); }
+    .rec-mark { color: #f59e0b; }
+    .tech-pos { color: #f87171; } .tech-neg { color: #4ade80; } .tech-neu { color: var(--muted); }
+    .sec-title { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin: 18px 0 4px; }
+    .pill { font-size:12px; color:var(--muted); }
+    tr.clickable { cursor: pointer; }
+    /* 走势图弹窗 */
+    .modal-mask { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+    .modal-mask.show { display: flex; }
+    .modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px; width: min(1100px, 94vw); max-height: 92vh; overflow-y: auto; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+    .modal-close { background: #475569; padding: 6px 12px; }
+    .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-top: 6px; }
+    @media (max-width: 820px) { .charts-grid { grid-template-columns: 1fr; } }
+    .chart-label { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+    .day-nav { width: 26px; padding: 2px 0; font-size: 12px; background: var(--card-2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; cursor: pointer; }
+    .day-nav:hover:not(:disabled) { background: var(--hover); }
+    .day-nav:disabled { opacity: .35; cursor: not-allowed; }
+    .tech-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:8px; }
+    .tech-bias { padding:3px 10px; border-radius:12px; font-size:13px; font-weight:700; color:#fff; }
+    .tech-bias.bull { background:#dc2626; } .tech-bias.bear { background:#16a34a; } .tech-bias.neutral { background:#6b7280; }
+    .tech-sig { display:inline-block; padding:2px 8px; margin:2px 3px 2px 0; border-radius:10px; font-size:11px; background:#27314d; color:#a5b4fc; }
+    .tech-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:4px 14px; font-size:12px; color:var(--muted); }
+    .tech-grid b { color:var(--text); font-weight:600; }
+    .bidask-block { margin-top: 16px; min-height: 120px; }
+    .bidask-block h4 { margin: 0 0 8px; font-size: 14px; }
+    .bidask-block table { margin-top: 0; }
+    .bidask-block td { padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 13px; }
+    .ba-label { color: var(--muted); width: 48px; }
+    .ba-price { text-align: right; font-weight: 600; }
+    .ba-vol { text-align: right; color: var(--muted); }
+    .ba-ask .ba-price { color: #4ade80; } .ba-bid .ba-price { color: #f87171; }
+    .ba-mid td { background: #27314d; font-weight: 700; text-align: center; color: #c7d2fe; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="topbar">
+      <h1>🤖 AI 预测历史与准确率</h1>
+      <a class="back" href="/"><button>← 返回实时监控</button></a>
+    </div>
+
+    <div class="card">
+      <div class="summary" id="summary"><div class="muted">加载中…</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card" style="padding:14px;">
+        <h3>历史预测（按日期）</h3>
+        <div class="muted" style="margin-bottom:10px;">点日期查看当天明细与复盘结果。</div>
+        <div id="dateList"></div>
+      </div>
+      <div class="card" id="detailCard">
+        <div class="muted">请选择左侧日期查看预测明细。</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 走势图弹窗 -->
+  <div class="modal-mask" id="chartModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div id="modalTitle" style="font-weight:700;">走势图</div>
+        <button class="modal-close" id="modalClose">✕ 关闭</button>
+      </div>
+      <div class="charts-grid">
+        <div>
+          <div class="chart-label">日K线 <span style="font-weight:400;color:var(--muted);font-size:11px;">叠加 MA5/MA10/MA20</span></div>
+          <div style="position:relative; height:260px;"><canvas id="mDaily"></canvas></div>
+          <div id="mTech" style="margin-top:10px;"></div>
+        </div>
+        <div>
+          <div class="chart-label" style="flex-wrap:wrap;">分时图
+            <span style="display:inline-flex; align-items:center; gap:4px;">
+              <button id="mIntradayPrev" class="day-nav" title="前一交易日">◀</button>
+              <span id="mIntradayDate" style="font-size:12px; color:var(--text); min-width:84px; text-align:center;">--</span>
+              <button id="mIntradayNext" class="day-nav" title="后一交易日">▶</button>
+              <button id="mIntradayToday" class="day-nav" style="width:auto; padding:2px 8px;" title="回到当天">今天</button>
+            </span>
+          </div>
+          <div style="position:relative; height:200px;"><canvas id="mIntraday"></canvas></div>
+          <div style="position:relative; height:60px; margin-top:6px;"><canvas id="mVol"></canvas></div>
+          <div style="font-size:11px; color:var(--muted); margin-top:4px;">成交量：<span style="color:#f87171;">█</span> 收&gt;开(涨) <span style="color:#4ade80;">█</span> 收&lt;开(跌)</div>
+        </div>
+      </div>
+      <div id="mBidask" class="bidask-block"></div>
+    </div>
+  </div>
+
+  <script>
+    const dateListEl = document.getElementById('dateList');
+    const detailCard = document.getElementById('detailCard');
+    const summaryEl = document.getElementById('summary');
+    let selectedDate = null;
+
+    function fmtPct(v) { return v == null ? '--' : (v * 100).toFixed(1) + '%'; }
+    function accClass(acc) {
+      if (acc == null) return 'acc-none';
+      if (acc >= 0.6) return 'acc-high';
+      if (acc >= 0.45) return 'acc-mid';
+      return 'acc-low';
+    }
+    function accLabel(it) {
+      if (!it.reviewed) return '<span class="acc-badge acc-none">未复盘</span>';
+      return `<span class="acc-badge ${accClass(it.accuracy)}">准确率 ${fmtPct(it.accuracy)}</span>`;
+    }
+
+    async function loadHistory() {
+      try {
+        const res = await fetch('/api/predict/history');
+        const data = await res.json();
+        renderSummary(data);
+        renderDateList(data.items || []);
+        if (data.items && data.items.length) selectDate(data.items[0].date);
+        else detailCard.innerHTML = '<div class="muted">暂无任何预测记录。回到首页点「立即预测」生成第一条。</div>';
+      } catch (e) {
+        summaryEl.innerHTML = '<div class="muted">加载失败：' + e.message + '</div>';
+      }
+    }
+
+    function renderSummary(d) {
+      summaryEl.innerHTML = `
+        <div class="stat"><div class="muted">累计总准确率</div><div class="num"><span class="acc-badge ${accClass(d.overall_accuracy)}" style="font-size:20px;padding:4px 12px;">${fmtPct(d.overall_accuracy)}</span></div></div>
+        <div class="stat"><div class="muted">已复盘命中/总数</div><div class="num">${d.total_hit} / ${d.total_predictions}</div></div>
+        <div class="stat"><div class="muted">已复盘交易日</div><div class="num">${d.reviewed_days} 天</div></div>
+        <div class="stat"><div class="muted">历史预测总天数</div><div class="num">${(d.items || []).length} 天</div></div>`;
+    }
+
+    function renderDateList(items) {
+      if (!items.length) { dateListEl.innerHTML = '<div class="muted">无记录</div>'; return; }
+      dateListEl.innerHTML = items.map(it => `
+        <div class="date-item" data-date="${it.date}">
+          <div class="d">${it.date}</div>
+          <div class="meta">推荐 ${it.rec_count} 只 · 候选 ${it.candidate_count ?? '--'} 只</div>
+          <div style="margin-top:6px;">${accLabel(it)}</div>
+        </div>`).join('');
+      dateListEl.querySelectorAll('.date-item').forEach(el =>
+        el.addEventListener('click', () => selectDate(el.dataset.date)));
+    }
+
+    function highlightDate() {
+      dateListEl.querySelectorAll('.date-item').forEach(el =>
+        el.classList.toggle('active', el.dataset.date === selectedDate));
+    }
+
+    async function selectDate(date) {
+      selectedDate = date;
+      highlightDate();
+      detailCard.innerHTML = '<div class="muted">加载 ' + date + ' 明细…</div>';
+      try {
+        const res = await fetch('/api/predict/' + date);
+        if (!res.ok) throw new Error('未找到该日记录');
+        renderDetail(await res.json());
+      } catch (e) {
+        detailCard.innerHTML = '<div class="muted">加载失败：' + e.message + '</div>';
+      }
+    }
+
+    function dirCell(p) {
+      const cls = p.direction === 'up' ? 'up' : p.direction === 'down' ? 'down' : 'flat';
+      const txt = p.direction === 'up' ? '↑ 涨' : p.direction === 'down' ? '↓ 跌' : '— 平';
+      return `<span class="${cls}">${txt}</span>`;
+    }
+    function techCell(p) {
+      if (p.tech_bias == null || p.tech_score == null) return '--';
+      const cls = p.tech_bias === '偏多' ? 'tech-pos' : p.tech_bias === '偏空' ? 'tech-neg' : 'tech-neu';
+      return `<span class="${cls}">${p.tech_bias} ${p.tech_score >= 0 ? '+' : ''}${p.tech_score}</span>`;
+    }
+    function hitCell(p, reviewed) {
+      if (!reviewed) return '';
+      const actual = p.actual_pct == null ? '--' : p.actual_pct + '%';
+      const cls = p.actual_pct == null ? 'flat' : p.actual_pct > 0 ? 'up' : p.actual_pct < 0 ? 'down' : 'flat';
+      const mark = p.hit === true ? '✅' : p.hit === false ? '❌' : '—';
+      return `<td class="${cls}">${actual}</td><td>${mark}</td>`;
+    }
+
+    function buildTable(rows, reviewed, recSet) {
+      const extraH = reviewed ? '<th>实际涨幅</th><th>命中</th>' : '';
+      const head = `<tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>技术面</th><th>理由</th>${extraH}</tr>`;
+      const body = rows.map(p => {
+        const star = recSet.has(p.symbol) ? '<span class="rec-mark">🔮 </span>' : '';
+        const expCls = p.direction === 'up' ? 'up' : p.direction === 'down' ? 'down' : 'flat';
+        return `<tr class="clickable" data-symbol="${p.symbol}" data-name="${p.name || ''}" title="点击查看走势图">
+          <td>${star}${p.symbol}</td><td>${p.name || ''}</td>
+          <td>${dirCell(p)}</td>
+          <td class="${expCls}">${p.expected_pct == null ? '--' : p.expected_pct + '%'}</td>
+          <td>${p.confidence == null ? '--' : Number(p.confidence).toFixed(2)}</td>
+          <td>${techCell(p)}</td>
+          <td style="max-width:360px;">${p.reason || ''}</td>
+          ${hitCell(p, reviewed)}
+        </tr>`;
+      }).join('');
+      return `<table><thead>${head}</thead><tbody>${body}</tbody></table>`;
+    }
+
+    function renderDetail(rec) {
+      const reviewed = !!rec.reviewed;
+      const preds = rec.predictions || [];
+      const recSet = new Set(rec.recommendations || []);
+      const recRows = (rec.recommendations || []).map(s => preds.find(p => p.symbol === s)).filter(Boolean);
+      const allRows = [...preds].sort((a, b) => (b.expected_pct ?? -99) - (a.expected_pct ?? -99));
+
+      let html = `
+        <h2>${rec.date} 预测明细</h2>
+        <div class="muted">生成于 ${rec.generated_at || '--'}｜模型 ${rec.model || '--'}｜联网 ${rec.web_search ? '是' : '否'}｜候选 ${rec.candidate_count ?? '--'} 只</div>`;
+      if (reviewed) {
+        html += `<div style="margin-top:8px;"><span class="acc-badge ${accClass(rec.accuracy)}">复盘准确率 ${fmtPct(rec.accuracy)}</span>
+          <span class="muted" style="margin-left:10px;">方向命中 ${rec.hit_count}/${rec.pred_count}｜复盘于 ${rec.review_at || '--'}</span></div>`;
+      } else {
+        html += `<div style="margin-top:8px;"><span class="acc-badge acc-none">未复盘</span><span class="muted" style="margin-left:10px;">次日收盘后自动复盘，届时显示准确率与命中</span></div>`;
+      }
+
+      html += `<div class="sec-title"><h3 style="margin:0;">🔮 推荐（${recRows.length} 只）</h3><span class="pill">AI 看涨且技术面共振优先</span></div>`;
+      html += recRows.length ? buildTable(recRows, reviewed, recSet) : '<div class="muted">当天无看涨推荐。</div>';
+
+      html += `<div class="sec-title"><h3 style="margin:0;">全部候选预测（${allRows.length} 只）</h3><span class="pill">按预测涨幅排序</span></div>`;
+      html += buildTable(allRows, reviewed, recSet);
+
+      detailCard.innerHTML = html;
+      detailCard.querySelectorAll('tr.clickable').forEach(tr =>
+        tr.addEventListener('click', () => openStockChart(tr.dataset.symbol, tr.dataset.name)));
+    }
+
+    // ===================== 走势图弹窗（与主页一致） =====================
+    const modal = document.getElementById('chartModal');
+    let mDailyChart = null, mIntradayChart = null, mVolChart = null;
+    let mCurrentSymbol = null, mDayOffset = 0;
+
+    document.getElementById('modalClose').addEventListener('click', closeModal);
+    modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+    function closeModal() { modal.classList.remove('show'); }
+
+    // 分时图日期切换
+    document.getElementById('mIntradayPrev').addEventListener('click', () => { mDayOffset += 1; loadMIntraday(); });
+    document.getElementById('mIntradayNext').addEventListener('click', () => { if (mDayOffset > 0) { mDayOffset -= 1; loadMIntraday(); } });
+    document.getElementById('mIntradayToday').addEventListener('click', () => { mDayOffset = 0; loadMIntraday(); });
+
+    function updateMIntradayNav(data) {
+      document.getElementById('mIntradayDate').textContent = data.date || '无数据';
+      document.getElementById('mIntradayPrev').disabled = data.has_prev === false;
+      document.getElementById('mIntradayNext').disabled = data.has_next === false;
+      document.getElementById('mIntradayToday').disabled = mDayOffset === 0;
+    }
+
+    async function loadMIntraday() {
+      if (!mCurrentSymbol) return;
+      try {
+        const res = await fetch(`/api/stock/${encodeURIComponent(mCurrentSymbol)}/intraday?scale=1&day_offset=${mDayOffset}`);
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        if ((!data.bars || !data.bars.length) && mDayOffset > 0) {
+          mDayOffset -= 1;
+          document.getElementById('mIntradayDate').textContent = '已无更早数据';
+          document.getElementById('mIntradayPrev').disabled = true;
+          return;
+        }
+        renderIntraday(data);
+        updateMIntradayNav(data);
+      } catch (e) { /* 忽略 */ }
+    }
+
+    function movingAvg(values, n) {
+      return values.map((_, i) => {
+        if (i < n - 1) return null;
+        let s = 0; for (let j = i - n + 1; j <= i; j++) s += values[j];
+        return +(s / n).toFixed(3);
+      });
+    }
+
+    async function openStockChart(symbol, name) {
+      document.getElementById('modalTitle').textContent = `${name || ''} (${symbol}) 走势图`;
+      modal.classList.add('show');
+      mCurrentSymbol = symbol;
+      mDayOffset = 0;   // 每次打开重置到当天
+      // 并行拉取日K线(含指标)、分时、五档
+      fetch(`/api/stock/${encodeURIComponent(symbol)}/history?count=70`)
+        .then(r => r.ok ? r.json() : Promise.reject('历史数据获取失败'))
+        .then(d => { renderDaily(d.history); renderTech(d.indicators); })
+        .catch(() => { document.getElementById('mTech').innerHTML = '<div class="muted">日K线加载失败</div>'; });
+      loadMIntraday();
+      loadBidAsk(symbol);
+    }
+
+    function renderDaily(history) {
+      const labels = history.map(h => h.date);
+      const values = history.map(h => h.close);
+      const maSet = (n, c) => ({ label: 'MA' + n, data: movingAvg(values, n), borderColor: c, borderWidth: 1, pointRadius: 0, fill: false, tension: .25, spanGaps: true });
+      const datasets = [
+        { label: '收盘价', data: values, borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,.18)', borderWidth: 1.5, tension: .25, fill: true, pointRadius: 0 },
+        maSet(5, '#f59e0b'), maSet(10, '#22c55e'), maSet(20, '#a855f7'),
+      ];
+      if (mDailyChart) mDailyChart.destroy();
+      mDailyChart = new Chart(document.getElementById('mDaily'), {
+        type: 'line', data: { labels, datasets },
+        options: { responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          scales: { x: { grid: { color: '#222d47' }, ticks: { color: '#94a3b8' } }, y: { grid: { color: '#222d47' }, ticks: { color: '#94a3b8' } } },
+          plugins: { legend: { display: true, labels: { boxWidth: 12, font: { size: 10 }, usePointStyle: true, color: '#cbd5e1' } } } },
+      });
+    }
+
+    function renderTech(ind) {
+      const panel = document.getElementById('mTech');
+      if (!ind) { panel.innerHTML = '<div class="muted">历史数据不足，无法计算技术指标。</div>'; return; }
+      const biasCls = ind.bias === '偏多' ? 'bull' : ind.bias === '偏空' ? 'bear' : 'neutral';
+      const sigs = (ind.signals || []).map(s => `<span class="tech-sig">${s}</span>`).join('') || '<span class="muted">无明显信号</span>';
+      const ma = ind.ma || {}, mac = ind.macd || {}, k = ind.kdj || {}, r = ind.rsi || {}, b = ind.boll || {}, vp = ind.volume_price || {};
+      const arrMap = { bull: '多头排列', bear: '空头排列', mixed: '均线纠缠' };
+      const posMap = { above_upper: '破上轨', below_lower: '破下轨', upper_half: '中轨上方', lower_half: '中轨下方' };
+      const crossMap = { golden: '金叉', dead: '死叉', hist_up: '红柱放大', hist_down: '绿柱放大' };
+      panel.innerHTML = `
+        <div class="tech-head"><span class="tech-bias ${biasCls}">技术面 ${ind.bias} ${ind.score >= 0 ? '+' : ''}${ind.score}</span></div>
+        <div style="margin-bottom:8px;">${sigs}</div>
+        <div class="tech-grid">
+          <div>均线：<b>${arrMap[ma.arrangement] || '--'}</b>${ma.above_ma20 === true ? ' · 站上MA20' : ma.above_ma20 === false ? ' · 失守MA20' : ''}</div>
+          <div>MACD：DIF <b>${mac.dif ?? '--'}</b> 柱 <b>${mac.hist ?? '--'}</b> ${crossMap[mac.cross] || ''}</div>
+          <div>KDJ：K <b>${k.k ?? '--'}</b> D <b>${k.d ?? '--'}</b> ${crossMap[k.cross] || ''}</div>
+          <div>RSI：6日 <b>${r.rsi6 ?? '--'}</b></div>
+          <div>BOLL：<b>${posMap[b.position] || '--'}</b></div>
+          <div>量价：<b>${vp.pattern || '--'}</b> 量比 ${vp.vol_ratio ?? '--'}</div>
+        </div>`;
+    }
+
+    function renderIntraday(data) {
+      const bars = data.bars || [];
+      const prevClose = data.prev_close;
+      const labels = bars.map(b => b.time ? b.time.slice(11, 16) : '');
+      const closes = bars.map(b => b.close);
+      const volumes = bars.map(b => b.volume != null ? b.volume / 100 : 0);
+      const last = closes[closes.length - 1];
+      // A股习惯：高于昨收红，低于昨收绿
+      const up = (prevClose == null || last == null || last >= prevClose);
+      const line = up ? '#f87171' : '#4ade80', fill = up ? 'rgba(248,113,113,.10)' : 'rgba(74,222,128,.10)';
+      if (mIntradayChart) mIntradayChart.destroy();
+      mIntradayChart = new Chart(document.getElementById('mIntraday'), {
+        type: 'line',
+        data: { labels, datasets: [
+          { label: '价格', data: closes, borderColor: line, backgroundColor: fill, borderWidth: 1.5, tension: 0, fill: true, pointRadius: 0 },
+          prevClose != null ? { label: '昨收', data: bars.map(() => prevClose), borderColor: '#9ca3af', borderWidth: 1, borderDash: [4, 4], pointRadius: 0, fill: false } : null,
+        ].filter(Boolean) },
+        options: { responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: { x: { ticks: { maxTicksLimit: 10, color: '#94a3b8', font: { size: 10 } }, grid: { color: '#222d47' } }, y: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#222d47' } } },
+          plugins: { legend: { display: false },
+            tooltip: { mode: 'index', intersect: false, callbacks: {
+              label: ctx => ctx.dataset.label === '昨收' ? `昨收: ${ctx.parsed.y?.toFixed(2)}` : `价格: ${ctx.parsed.y?.toFixed(2)}`,
+            }} } },
+      });
+      const volColor = bars.map(b => (b.close != null && b.open != null && b.close >= b.open) ? 'rgba(248,113,113,.65)' : 'rgba(74,222,128,.65)');
+      if (mVolChart) mVolChart.destroy();
+      mVolChart = new Chart(document.getElementById('mVol'), {
+        type: 'bar', data: { labels, datasets: [{ data: volumes, backgroundColor: volColor, borderWidth: 0 }] },
+        options: { responsive: true, maintainAspectRatio: false, animation: false,
+          interaction: { mode: 'index', intersect: false },
+          scales: { x: { display: false }, y: { ticks: { color: '#94a3b8', font: { size: 9 }, callback: v => v >= 10000 ? (v / 10000).toFixed(0) + '万' : v }, grid: { color: '#222d47' } } },
+          plugins: { legend: { display: false },
+            tooltip: { mode: 'index', intersect: false, callbacks: { label: ctx => `成交量: ${Math.round(ctx.parsed.y).toLocaleString()}手` } } } },
+      });
+    }
+
+    // 量价联动：在一个图上移动时，另一个图同步高亮同一时刻
+    function linkCharts(getA, getB, canvasA, canvasB) {
+      const elA = document.getElementById(canvasA), elB = document.getElementById(canvasB);
+      const clear = c => { if (!c) return; c.setActiveElements([]); if (c.tooltip) c.tooltip.setActiveElements([], { x: 0, y: 0 }); c.update('none'); };
+      const sync = (src, tgt, e) => {
+        if (!src || !tgt) return;
+        const hit = src.getElementsAtEventForMode(e, 'index', { intersect: false }, true);
+        if (!hit.length) { clear(tgt); return; }
+        const idx = hit[0].index;
+        const active = tgt.data.datasets.map((_, di) => ({ datasetIndex: di, index: idx }));
+        const el = tgt.getDatasetMeta(0).data[idx];
+        tgt.setActiveElements(active);
+        if (tgt.tooltip) tgt.tooltip.setActiveElements(active, el ? { x: el.x, y: el.y } : { x: 0, y: 0 });
+        tgt.update('none');
+      };
+      elA.addEventListener('mousemove', e => sync(getA(), getB(), e));
+      elA.addEventListener('mouseleave', () => clear(getB()));
+      elB.addEventListener('mousemove', e => sync(getB(), getA(), e));
+      elB.addEventListener('mouseleave', () => clear(getA()));
+    }
+    linkCharts(() => mIntradayChart, () => mVolChart, 'mIntraday', 'mVol');
+
+    function fmtLot(v) { return v == null ? '--' : Math.round(Number(v) / 100).toLocaleString() + '手'; }
+    function fmtPrice(p) { return p == null ? '--' : Number(p).toFixed(2); }
+    async function loadBidAsk(symbol) {
+      const el = document.getElementById('mBidask');
+      el.innerHTML = '<h4>五档盘口</h4><div class="muted">加载中…</div>';
+      try {
+        const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/bidask`);
+        if (!res.ok) throw new Error('获取五档失败');
+        const d = await res.json();
+        const asks = [4, 3, 2, 1, 0].map(i => { const a = d.asks[i]; return `<tr class="ba-ask"><td class="ba-label">卖${a.level}</td><td class="ba-price">${fmtPrice(a.price)}</td><td class="ba-vol">${fmtLot(a.volume)}</td></tr>`; }).join('');
+        const bids = [0, 1, 2, 3, 4].map(i => { const b = d.bids[i]; return `<tr class="ba-bid"><td class="ba-label">买${b.level}</td><td class="ba-price">${fmtPrice(b.price)}</td><td class="ba-vol">${fmtLot(b.volume)}</td></tr>`; }).join('');
+        const midCls = (d.current_price != null && d.previous_close != null && d.current_price >= d.previous_close) ? 'up' : 'down';
+        el.innerHTML = `<h4>五档盘口 <span style="font-weight:400;color:var(--muted);font-size:12px;">${d.timestamp || ''}</span></h4>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;">
+            <table><tbody>${asks}</tbody></table>
+            <table><tbody><tr class="ba-mid"><td>现价</td><td class="${midCls}">${fmtPrice(d.current_price)}</td><td>昨收 ${fmtPrice(d.previous_close)}</td></tr>${bids}</tbody></table>
+          </div>`;
+      } catch (e) { el.innerHTML = `<h4>五档盘口</h4><div class="muted">${e.message}</div>`; }
+    }
+
+    loadHistory();
+  </script>
+</body>
+</html>

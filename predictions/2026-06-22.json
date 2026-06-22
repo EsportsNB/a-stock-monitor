@@ -1,0 +1,864 @@
+{
+  "date": "2026-06-22",
+  "generated_at": "2026-06-22 16:25:11",
+  "model": "glm-4-flash",
+  "web_search": true,
+  "candidate_count": 50,
+  "predictions": [
+    {
+      "symbol": "920725.BJ",
+      "name": "惠丰钻石",
+      "ref_price": 110.43,
+      "ref_change_percent": 29.99,
+      "direction": "up",
+      "expected_pct": 5.0,
+      "confidence": 0.8,
+      "reason": "多头排列，MACD金叉，KDJ低位金叉，RSI超卖，量价平稳，无重大利空消息",
+      "tech_score": 4,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "均线多头排列",
+        "MA5上穿MA10(金叉)",
+        "MACD金叉(零轴上)",
+        "KDJ低位金叉"
+      ]
+    },
+    {
+      "symbol": "920790.BJ",
+      "name": "联迪信息",
+      "ref_price": 26.1,
+      "ref_change_percent": 29.98,
+      "direction": "flat",
+      "expected_pct": 0.0,
+      "confidence": 0.5,
+      "reason": "均线纠缠，MACD红柱，KDJ低位，RSI中性，量价缩跌，无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD绿柱放大"
+      ]
+    },
+    {
+      "symbol": "920175.BJ",
+      "name": "东方碳素",
+      "ref_price": 11.88,
+      "ref_change_percent": 24.79,
+      "direction": "down",
+      "expected_pct": -3.0,
+      "confidence": 0.6,
+      "reason": "均线纠缠失守MA20，MACD绿柱，KDJ超卖，RSI中性，BOLL中轨下，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD绿柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "920799.BJ",
+      "name": "艾融软件",
+      "ref_price": 35.72,
+      "ref_change_percent": 22.41,
+      "direction": "down",
+      "expected_pct": -3.0,
+      "confidence": 0.6,
+      "reason": "均线纠缠失守MA20，MACD红柱，KDJ中性，RSI中性，BOLL中轨下，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD绿柱放大"
+      ]
+    },
+    {
+      "symbol": "688496.SH",
+      "name": "*ST清越",
+      "ref_price": 1.06,
+      "ref_change_percent": 20.45,
+      "direction": "up",
+      "expected_pct": 2.0,
+      "confidence": 0.7,
+      "reason": "空头排列失守MA20，MACD红柱，KDJ超卖，RSI超卖，量价平稳，无重大利空消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD绿柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "301139.SZ",
+      "name": "*ST元道",
+      "ref_price": 5.02,
+      "ref_change_percent": 20.1,
+      "direction": "up",
+      "expected_pct": 2.0,
+      "confidence": 0.7,
+      "reason": "空头排列失守MA20，MACD红柱，KDJ超卖，RSI超卖，量价平稳，无重大利空消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD绿柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "300561.SZ",
+      "name": "汇金科技",
+      "ref_price": 15.28,
+      "ref_change_percent": 20.03,
+      "direction": "down",
+      "expected_pct": -2.0,
+      "confidence": 0.6,
+      "reason": "均线纠缠失守MA20，MACD绿柱，KDJ超卖，RSI超卖，BOLL中轨下，无重大利好消息",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "300882.SZ",
+      "name": "万胜智能",
+      "ref_price": 18.04,
+      "ref_change_percent": 20.03,
+      "direction": "down",
+      "expected_pct": -2.0,
+      "confidence": 0.6,
+      "reason": "空头排列失守MA20，MACD红柱，KDJ中性，RSI中性，BOLL中轨下，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "301356.SZ",
+      "name": "天振股份",
+      "ref_price": 28.73,
+      "ref_change_percent": 20.01,
+      "direction": "down",
+      "expected_pct": -3.0,
+      "confidence": 0.6,
+      "reason": "均线纠缠失守MA20，MACD绿柱，KDJ超买，RSI超买，BOLL中轨下，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "301071.SZ",
+      "name": "力量钻石",
+      "ref_price": 91.92,
+      "ref_change_percent": 20.0,
+      "direction": "up",
+      "expected_pct": 3.0,
+      "confidence": 0.8,
+      "reason": "均线纠缠站上MA20，MACD绿柱，KDJ中性，RSI超买，BOLL中轨上，无重大利空消息",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "301548.SZ",
+      "name": "崇德科技",
+      "ref_price": 93.06,
+      "ref_change_percent": 20.0,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.8,
+      "reason": "均线多头，MACD金叉，量增价涨",
+      "tech_score": 3,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD金叉",
+        "量增价涨"
+      ]
+    },
+    {
+      "symbol": "300243.SZ",
+      "name": "瑞丰高材",
+      "ref_price": 23.46,
+      "ref_change_percent": 20.0,
+      "direction": "flat",
+      "expected_pct": 0.0,
+      "confidence": 0.7,
+      "reason": "均线多头，量价平稳",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD绿柱放大"
+      ]
+    },
+    {
+      "symbol": "300179.SZ",
+      "name": "四方达",
+      "ref_price": 57.48,
+      "ref_change_percent": 20.0,
+      "direction": "up",
+      "expected_pct": 0.4,
+      "confidence": 0.9,
+      "reason": "均线多头，KDJ低位金叉",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ低位金叉"
+      ]
+    },
+    {
+      "symbol": "688662.SH",
+      "name": "富信科技",
+      "ref_price": 171.49,
+      "ref_change_percent": 20.0,
+      "direction": "up",
+      "expected_pct": 0.6,
+      "confidence": 0.8,
+      "reason": "多头排列，MACD柱放大",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "量缩价涨(量价背离)"
+      ]
+    },
+    {
+      "symbol": "301580.SZ",
+      "name": "爱迪特",
+      "ref_price": 75.8,
+      "ref_change_percent": 19.99,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，BOLL破上轨",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD红柱放大",
+        "KDJ超买",
+        "量缩价涨(量价背离)"
+      ]
+    },
+    {
+      "symbol": "300085.SZ",
+      "name": "银之杰",
+      "ref_price": 32.35,
+      "ref_change_percent": 19.99,
+      "direction": "down",
+      "expected_pct": -0.6,
+      "confidence": 0.6,
+      "reason": "空头排列，MACD死叉",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "300522.SZ",
+      "name": "世名科技",
+      "ref_price": 23.05,
+      "ref_change_percent": 19.99,
+      "direction": "down",
+      "expected_pct": -0.7,
+      "confidence": 0.8,
+      "reason": "KDJ超买，BOLL破上轨",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)",
+        "量增价涨"
+      ]
+    },
+    {
+      "symbol": "688367.SH",
+      "name": "工大高科",
+      "ref_price": 44.6,
+      "ref_change_percent": 19.99,
+      "direction": "flat",
+      "expected_pct": 0.0,
+      "confidence": 0.7,
+      "reason": "均线纠缠，量价平稳",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "300401.SZ",
+      "name": "花园生物",
+      "ref_price": 19.87,
+      "ref_change_percent": 19.99,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，BOLL破上轨",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "688530.SH",
+      "name": "欧莱新材",
+      "ref_price": 78.58,
+      "ref_change_percent": 19.22,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.8,
+      "reason": "多头排列，MACD柱放大",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "300308.SZ",
+      "name": "中际旭创",
+      "ref_price": 1382.33,
+      "ref_change_percent": 1.06,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，BOLL破上轨，无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD金叉(零轴上)",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "603986.SH",
+      "name": "兆易创新",
+      "ref_price": 689.7,
+      "ref_change_percent": 9.65,
+      "direction": "down",
+      "expected_pct": -1.5,
+      "confidence": 0.8,
+      "reason": "KDJ超买，BOLL破上轨，无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "300502.SZ",
+      "name": "新易盛",
+      "ref_price": 579.97,
+      "ref_change_percent": -0.26,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.6,
+      "reason": "MACD金叉，无重大利空消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "000725.SZ",
+      "name": "京东方Ａ",
+      "ref_price": 6.93,
+      "ref_change_percent": 5.8,
+      "direction": "up",
+      "expected_pct": 1.0,
+      "confidence": 0.7,
+      "reason": "MACD微红柱，无重大利空消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "002384.SZ",
+      "name": "东山精密",
+      "ref_price": 270.55,
+      "ref_change_percent": -0.9,
+      "direction": "down",
+      "expected_pct": -0.8,
+      "confidence": 0.7,
+      "reason": "KDJ超买，BOLL破上轨，无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "300750.SZ",
+      "name": "宁德时代",
+      "ref_price": 408.98,
+      "ref_change_percent": 4.45,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.6,
+      "reason": "MACD绿柱，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD绿柱放大"
+      ]
+    },
+    {
+      "symbol": "601138.SH",
+      "name": "工业富联",
+      "ref_price": 78.88,
+      "ref_change_percent": 1.02,
+      "direction": "up",
+      "expected_pct": 1.0,
+      "confidence": 0.8,
+      "reason": "量增价涨，无重大利空消息",
+      "tech_score": 3,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD红柱放大",
+        "量增价涨"
+      ]
+    },
+    {
+      "symbol": "688008.SH",
+      "name": "澜起科技",
+      "ref_price": 280.05,
+      "ref_change_percent": 3.76,
+      "direction": "down",
+      "expected_pct": -1.0,
+      "confidence": 0.7,
+      "reason": "KDJ超买，BOLL破上轨，无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "300059.SZ",
+      "name": "东方财富",
+      "ref_price": 20.97,
+      "ref_change_percent": 12.74,
+      "direction": "down",
+      "expected_pct": -1.0,
+      "confidence": 0.6,
+      "reason": "MACD红柱缩小，无重大利好消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "688256.SH",
+      "name": "寒武纪",
+      "ref_price": 1456.99,
+      "ref_change_percent": -3.35,
+      "direction": "up",
+      "expected_pct": 1.0,
+      "confidence": 0.7,
+      "reason": "MACD金叉，无重大利空消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD金叉(零轴上)",
+        "突破布林上轨(超买)",
+        "量增价涨"
+      ]
+    },
+    {
+      "symbol": "600487.SH",
+      "name": "亨通光电",
+      "ref_price": 120.13,
+      "ref_change_percent": 8.21,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，RSI超买，技术面偏空；无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD绿柱放大",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "600584.SH",
+      "name": "长电科技",
+      "ref_price": 91.33,
+      "ref_change_percent": 10.0,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.6,
+      "reason": "KDJ超买，RSI超买，技术面偏空；无重大利好消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD红柱放大",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "300394.SZ",
+      "name": "天孚通信",
+      "ref_price": 326.12,
+      "ref_change_percent": -3.11,
+      "direction": "up",
+      "expected_pct": 1.5,
+      "confidence": 0.8,
+      "reason": "KDJ低位金叉，技术面偏多；无重大利空消息",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MACD红柱放大",
+        "KDJ低位金叉"
+      ]
+    },
+    {
+      "symbol": "002281.SZ",
+      "name": "光迅科技",
+      "ref_price": 276.08,
+      "ref_change_percent": 3.71,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，RSI超买，技术面偏空；无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD金叉(零轴上)",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "300274.SZ",
+      "name": "阳光电源",
+      "ref_price": 163.46,
+      "ref_change_percent": 11.21,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.6,
+      "reason": "均线失守MA20，技术面偏空；无重大利好消息",
+      "tech_score": 2,
+      "tech_bias": "偏多",
+      "tech_signals": [
+        "MA5上穿MA10(金叉)",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "300476.SZ",
+      "name": "胜宏科技",
+      "ref_price": 365.4,
+      "ref_change_percent": -0.98,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，技术面偏空；无重大利好消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD金叉(零轴上)",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "600522.SH",
+      "name": "中天科技",
+      "ref_price": 59.63,
+      "ref_change_percent": 5.45,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，技术面偏空；无重大利好消息",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买"
+      ]
+    },
+    {
+      "symbol": "600183.SH",
+      "name": "生益科技",
+      "ref_price": 184.5,
+      "ref_change_percent": 0.34,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "RSI超买，技术面偏空；无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "688525.SH",
+      "name": "佰维存储",
+      "ref_price": 406.31,
+      "ref_change_percent": 5.21,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "KDJ超买，技术面偏空；无重大利好消息",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "RSI超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "000988.SZ",
+      "name": "华工科技",
+      "ref_price": 174.67,
+      "ref_change_percent": -1.62,
+      "direction": "up",
+      "expected_pct": 1.0,
+      "confidence": 0.7,
+      "reason": "多头排列站上MA20，技术面偏多；无重大利空消息",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线多头排列",
+        "MACD红柱放大",
+        "KDJ超买",
+        "突破布林上轨(超买)"
+      ]
+    },
+    {
+      "symbol": "920000.BJ",
+      "name": "安徽凤凰",
+      "ref_price": 12.65,
+      "ref_change_percent": 2.26,
+      "direction": "down",
+      "expected_pct": -0.5,
+      "confidence": 0.7,
+      "reason": "空头排列失守MA20，MACD柱缩小，KDJ超卖，BOLL破下轨",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD绿柱放大",
+        "KDJ超卖",
+        "RSI超卖",
+        "跌破布林下轨(超跌)"
+      ]
+    },
+    {
+      "symbol": "920001.BJ",
+      "name": "纬达光电",
+      "ref_price": 15.87,
+      "ref_change_percent": 2.39,
+      "direction": "down",
+      "expected_pct": -0.3,
+      "confidence": 0.6,
+      "reason": "均线纠缠失守MA20，MACD柱缩小，KDJ超卖，BOLL中轨下",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "MACD绿柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "920002.BJ",
+      "name": "万达轴承",
+      "ref_price": 59.9,
+      "ref_change_percent": -2.98,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.8,
+      "reason": "MACD金叉，量价平稳",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD金叉"
+      ]
+    },
+    {
+      "symbol": "920003.BJ",
+      "name": "中诚咨询",
+      "ref_price": 27.57,
+      "ref_change_percent": -1.11,
+      "direction": "down",
+      "expected_pct": -0.4,
+      "confidence": 0.7,
+      "reason": "空头排列失守MA20，MACD柱缩小，KDJ死叉，BOLL中轨下",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD红柱放大"
+      ]
+    },
+    {
+      "symbol": "920005.BJ",
+      "name": "鼎佳精密",
+      "ref_price": 28.71,
+      "ref_change_percent": -0.45,
+      "direction": "down",
+      "expected_pct": -0.3,
+      "confidence": 0.6,
+      "reason": "空头排列失守MA20，MACD柱缩小，KDJ超卖，BOLL中轨下",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD红柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "920006.BJ",
+      "name": "晟楠科技",
+      "ref_price": 17.19,
+      "ref_change_percent": 1.0,
+      "direction": "down",
+      "expected_pct": -0.2,
+      "confidence": 0.7,
+      "reason": "均线纠缠失守MA20，MACD柱放大，KDJ死叉，BOLL中轨下",
+      "tech_score": -2,
+      "tech_bias": "偏空",
+      "tech_signals": [
+        "MACD绿柱放大",
+        "KDJ死叉"
+      ]
+    },
+    {
+      "symbol": "920007.BJ",
+      "name": "酉立智能",
+      "ref_price": 40.8,
+      "ref_change_percent": 3.45,
+      "direction": "up",
+      "expected_pct": 0.6,
+      "confidence": 0.8,
+      "reason": "MACD柱微小，KDJ超卖，量价平稳",
+      "tech_score": -1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD绿柱放大",
+        "KDJ超卖"
+      ]
+    },
+    {
+      "symbol": "920008.BJ",
+      "name": "成电光信",
+      "ref_price": 23.12,
+      "ref_change_percent": 1.05,
+      "direction": "down",
+      "expected_pct": -0.2,
+      "confidence": 0.7,
+      "reason": "均线纠缠失守MA20，MACD柱放大，KDJ死叉，BOLL中轨下",
+      "tech_score": -2,
+      "tech_bias": "偏空",
+      "tech_signals": [
+        "MACD绿柱放大",
+        "KDJ死叉"
+      ]
+    },
+    {
+      "symbol": "920009.BJ",
+      "name": "丹娜生物",
+      "ref_price": 38.6,
+      "ref_change_percent": -8.03,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.9,
+      "reason": "MACD柱放大，量增价涨，BOLL破上轨",
+      "tech_score": 0,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD红柱放大",
+        "突破布林上轨(超买)",
+        "量增价涨"
+      ]
+    },
+    {
+      "symbol": "920010.BJ",
+      "name": "凯添燃气",
+      "ref_price": 9.21,
+      "ref_change_percent": 1.54,
+      "direction": "up",
+      "expected_pct": 0.5,
+      "confidence": 0.8,
+      "reason": "空头排列失守MA20，MACD柱缩小，KDJ超卖，BOLL破下轨",
+      "tech_score": 1,
+      "tech_bias": "中性",
+      "tech_signals": [
+        "均线空头排列",
+        "MACD绿柱放大",
+        "KDJ超卖",
+        "RSI超卖",
+        "跌破布林下轨(超跌)"
+      ]
+    }
+  ],
+  "recommendations": [
+    "920725.BJ",
+    "301071.SZ",
+    "601138.SH",
+    "300394.SZ",
+    "301548.SZ",
+    "688496.SH",
+    "301139.SZ",
+    "688530.SH",
+    "000725.SZ",
+    "688256.SH"
+  ],
+  "reviewed": false
+}

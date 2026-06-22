@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
@@ -66,6 +66,7 @@ class StockHistoryResponse(BaseModel):
     symbol: str
     name: str
     history: List[StockHistoryPoint]
+    indicators: Optional[Dict[str, Any]] = None   # MA/MACD/KDJ/RSI/BOLL/量价 + 综合评分
 
 
 class StockSummary(BaseModel):

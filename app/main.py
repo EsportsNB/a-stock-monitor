@@ -32,6 +32,7 @@ from .stock_monitor import (
     start_watchlist_polling,
 )
 from .ai_predictor import (
+    list_predictions,
     load_prediction,
     review_pending,
     review_prediction,
@@ -61,6 +62,11 @@ def _require_cache_ready():
 @app.get("/", response_class=FileResponse)
 def index():
     return FileResponse("app/static/index.html")
+
+
+@app.get("/history", response_class=FileResponse)
+def history_page():
+    return FileResponse("app/static/history.html")
 
 
 @app.get("/health")
@@ -127,10 +133,11 @@ async def stock_bidask(symbol: str = Path(..., description="股票代码，支�
 async def stock_intraday(
     symbol: str = Path(..., description="股票代码，支持 600519 / 600519.SH"),
     scale: int = Query(1, ge=1, le=60, description="K 线周期（分钟），1/5/15/30/60"),
+    day_offset: int = Query(0, ge=0, le=15, description="0=当天，1=前一交易日，依次往前"),
 ):
-    """分时行情（新浪分钟级 K 线）。scale=1 返回 1 分钟数据，覆盖当日全部交易时段。"""
+    """分时行情（新浪分钟级 K 线）。day_offset 切换历史交易日（受新浪分钟数据保留天数限制）。"""
     try:
-        return await run_in_threadpool(get_stock_intraday, symbol, scale)
+        return await run_in_threadpool(get_stock_intraday, symbol, scale, day_offset)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 
@@ -218,6 +225,12 @@ async def predict_review_pending():
 @app.get("/api/predict/status")
 def predict_status():
     return _predict_status
+
+
+@app.get("/api/predict/history")
+def predict_history():
+    """所有历史预测概览 + 累计准确率，供历史页展示。"""
+    return list_predictions()
 
 
 @app.get("/api/predict/today")

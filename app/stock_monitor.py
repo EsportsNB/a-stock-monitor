@@ -620,10 +620,12 @@ def get_stock_history(symbol: str, count: int = 30) -> dict:
         )
 
     stock_info = get_stock_trends([normalized])[0]
+    from .indicators import summarize_indicators
     return {
         "symbol": normalized,
         "name": stock_info["name"],
         "history": history,
+        "indicators": summarize_indicators(history),
     }
 
 
@@ -950,16 +952,21 @@ def _extract_watch_alerts(items: List[dict]) -> List[dict]:
     return alerts
 
 
-def get_stock_intraday(symbol: str, scale: int = 1) -> dict:
+def get_stock_intraday(symbol: str, scale: int = 1, day_offset: int = 0) -> dict:
     """获取分时行情（新浪 JSONP 分钟级 K 线）。
     scale=1 为 1 分钟，scale=5 为 5 分钟，最大 60。
-    datalen=241 覆盖一个完整交易日（09:30-11:30 + 13:00-15:00 共 240 分钟）。
+    day_offset：0=最近交易日(当天)，1=前一交易日，依次往前，用于翻看历史分时。
+    一个交易日约 240/scale 根，多取几天用于切换日期 + 计算各日昨收。
     """
     full = _symbol_to_full_code(symbol)   # sh600519
+    day_offset = max(0, int(day_offset))
+    bars_per_day = max(1, 240 // scale)
+    # 选中日 + 之前一日(算昨收) + 缓冲，封顶 1400（新浪实际可返回上限附近）
+    datalen = min(1400, (day_offset + 2) * bars_per_day + 10)
     url = (
         "https://quotes.sina.cn/cn/api/jsonp_v2.php/var_d"
         "/CN_MarketDataService.getKLineData"
-        f"?symbol={full}&scale={scale}&ma=no&datalen=241"
+        f"?symbol={full}&scale={scale}&ma=no&datalen={datalen}"
     )
     try:
         resp = requests.get(
@@ -1000,20 +1007,47 @@ def get_stock_intraday(symbol: str, scale: int = 1) -> dict:
             "close": _parse_number(item.get("close")),
             "volume": _parse_number(item.get("volume")),
         })
+    bars.sort(key=lambda b: b["time"])
 
-    # 取当日昨收（用于分时图画昨收参考线）
+    # 按日期分组，挑出 day_offset 指定的那一天
+    by_date = {}
+    for b in bars:
+        by_date.setdefault(b["time"][:10], []).append(b)
+    ordered_dates = sorted(by_date.keys())   # 升序，最后一个是最近交易日
+
+    sel_index = len(ordered_dates) - 1 - day_offset
+    if sel_index < 0:
+        # 请求的历史日超出已取到的范围（新浪分钟数据只保留近几日）
+        return {
+            "symbol": normalize_symbol(symbol), "scale": scale, "day_offset": day_offset,
+            "date": None, "prev_close": None, "bars": [],
+            "has_prev": False, "has_next": day_offset > 0,
+        }
+
+    sel_date = ordered_dates[sel_index]
+    day_bars = by_date[sel_date]
+
+    # 该日昨收：优先用上一交易日的收盘；当天(offset=0)且无上一日数据时回退到实时快照的“昨收”
     prev_close = None
-    with _cache_lock:
-        spot = _cache["spot_df"]
-    if spot is not None:
-        code_col = spot["代码"].astype(str)
-        row = spot.loc[code_col == full]
-        if not row.empty:
-            prev_close = _parse_number(row.iloc[0].get("昨收"))
+    if sel_index - 1 >= 0:
+        prev_day_bars = by_date[ordered_dates[sel_index - 1]]
+        prev_close = prev_day_bars[-1]["close"]
+    elif day_offset == 0:
+        with _cache_lock:
+            spot = _cache["spot_df"]
+        if spot is not None:
+            code_col = spot["代码"].astype(str)
+            row = spot.loc[code_col == full]
+            if not row.empty:
+                prev_close = _parse_number(row.iloc[0].get("昨收"))
 
     return {
         "symbol": normalize_symbol(symbol),
         "scale": scale,
+        "day_offset": day_offset,
+        "date": sel_date,
         "prev_close": prev_close,
-        "bars": bars,
+        "bars": day_bars,
+        "has_prev": sel_index - 1 >= 0,   # 已取到的数据里还有更早的一天
+        "has_next": day_offset > 0,       # 还能往后回到更近的一天
     }

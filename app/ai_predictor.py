@@ -93,27 +93,66 @@ def select_candidates(limit: int = CANDIDATE_LIMIT) -> List[dict]:
     return items
 
 
+def attach_indicators(candidates: List[dict]) -> List[dict]:
+    """为每只候选股拉取日K线并计算技术指标，附加到候选 dict 上。
+    单只失败不影响整体（该股 tech 置 None）。运行在收盘后，逐只串行可接受。"""
+    from .stock_monitor import get_stock_history
+
+    for s in candidates:
+        try:
+            hist = get_stock_history(s["symbol"], count=70)
+            s["tech"] = hist.get("indicators")
+        except Exception as exc:
+            print(f"指标计算失败 {s['symbol']}：{exc}")
+            s["tech"] = None
+        time.sleep(0.3)   # 轻微限速，避免历史接口被限流
+    return candidates
+
+
 # ============================================================
 # 预测：分批调用 GLM
 # ============================================================
+
+def _tech_line(s: dict) -> str:
+    """把候选股的技术指标摘要压成一行喂给模型。"""
+    t = s.get("tech")
+    if not t:
+        return "技术面数据不足"
+    ma, mac, k, r, b, vp = t["ma"], t["macd"], t["kdj"], t["rsi"], t["boll"], t["volume_price"]
+    arr = {"bull": "多头排列", "bear": "空头排列", "mixed": "均线纠缠"}.get(ma.get("arrangement"), "--")
+    pos = {"above_upper": "破上轨", "below_lower": "破下轨", "upper_half": "中轨上", "lower_half": "中轨下"}.get(b.get("position"), "--")
+    return (
+        f"技术[{t['bias']}评分{t['score']:+d}] {arr}"
+        f"{'站上MA20' if ma.get('above_ma20') else '失守MA20' if ma.get('above_ma20') is False else ''}; "
+        f"MACD柱{mac.get('hist')}{'金叉' if mac.get('cross')=='golden' else '死叉' if mac.get('cross')=='dead' else ''}; "
+        f"KDJ K{k.get('k')}D{k.get('d')}{'低位金叉' if k.get('cross')=='golden' else '死叉' if k.get('cross')=='dead' else ''}{'超买' if k.get('state')=='overbought' else '超卖' if k.get('state')=='oversold' else ''}; "
+        f"RSI6={r.get('rsi6')}; BOLL{pos}; 量价{vp.get('pattern')}(量比{vp.get('vol_ratio')})"
+    )
+
 
 def _build_messages(batch: List[dict]):
     lines = []
     for s in batch:
         lines.append(
             f"- {s['symbol']} {s['name']}：现价{s['current_price']} 涨跌幅{s['change_percent']}% "
-            f"今开{s.get('open')} 最高{s.get('high')} 最低{s.get('low')} 成交量{s.get('volume')} "
-            f"放量倍数{s.get('volume_ratio')} 异动{s.get('alert')} 趋势{s.get('trend')}"
+            f"今开{s.get('open')} 最高{s.get('high')} 最低{s.get('low')} 放量倍数{s.get('volume_ratio')} 趋势{s.get('trend')}\n"
+            f"  {_tech_line(s)}"
         )
     stock_block = "\n".join(lines)
     system = (
-        "你是严谨的A股短线分析助手。请结合每只股票的量价技术面，并联网搜索该公司最近一周的新闻、"
-        "公告、行业政策与资金动向，综合预测【下一个交易日】的涨跌。"
-        "务必只输出一个JSON数组，禁止输出任何多余文字或解释。数组每个元素格式："
-        '{"symbol":"股票代码","direction":"up或down或flat","expected_pct":预测涨跌幅(数字,如3.5或-2.0),'
-        '"confidence":0到1之间的置信度,"reason":"30字内理由，含搜到的关键消息"}'
+        "你是严谨的A股短线分析助手，精通技术分析。已为每只股票预计算了技术指标（MA/MACD/KDJ/RSI/BOLL/量价），"
+        "并给出综合多空评分。请按以下规则判断【下一个交易日】涨跌，再联网搜索该公司近一周的新闻、公告、"
+        "行业政策与资金动向修正方向：\n"
+        "技术面规则：①均线多头排列且站上MA20偏多，空头排列偏空；②MACD零轴上金叉/红柱放大偏多，死叉/绿柱放大偏空；"
+        "③KDJ低位金叉偏多，高位死叉或超买偏空；④RSI超卖(<20)反弹偏多，超买(>80)偏空；"
+        "⑤价格破布林下轨易超跌反弹，破上轨滞涨偏空；⑥量增价涨偏多，量增价跌/高位放量滞涨偏空；"
+        "⑦多个指标同向共振时可靠性更高，技术评分已综合上述维度。\n"
+        "消息面优先级：重大利好/利空公告、业绩、政策可覆盖技术面信号。技术与消息冲突时说明并降低置信度。\n"
+        "务必只输出一个JSON数组，禁止任何多余文字。每个元素格式："
+        '{"symbol":"代码","direction":"up或down或flat","expected_pct":预测涨跌幅数字,'
+        '"confidence":0到1置信度,"reason":"40字内理由，需点明关键技术信号+搜到的消息"}'
     )
-    user = f"请分析以下股票并预测下一交易日涨跌，只返回JSON数组：\n{stock_block}"
+    user = f"请综合技术面与消息面预测下列股票下一交易日涨跌，只返回JSON数组：\n{stock_block}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
@@ -144,6 +183,7 @@ def predict_candidates(candidates: List[dict], use_web_search: bool = True) -> L
         for s in batch:
             p = by_symbol.get(s["symbol"], {})
             exp = p.get("expected_pct")
+            tech = s.get("tech")
             predictions.append({
                 "symbol": s["symbol"],
                 "name": s["name"],
@@ -153,6 +193,9 @@ def predict_candidates(candidates: List[dict], use_web_search: bool = True) -> L
                 "expected_pct": exp if isinstance(exp, (int, float)) else None,
                 "confidence": p.get("confidence"),
                 "reason": p.get("reason"),
+                "tech_score": tech.get("score") if tech else None,
+                "tech_bias": tech.get("bias") if tech else None,
+                "tech_signals": tech.get("signals") if tech else None,
             })
         time.sleep(1)   # 轻微限速，避免触发免费额度的 RPM 限制
     return predictions
@@ -182,6 +225,48 @@ def load_prediction(date_str: str) -> Optional[dict]:
         return None
 
 
+def list_predictions() -> dict:
+    """列出所有历史预测的概览（日期、是否已复盘、准确率），按日期倒序。
+    供网页历史页一次性拉取列表，再按需取单日明细。"""
+    items = []
+    grand_total = grand_hit = 0
+    if os.path.isdir(PRED_DIR):
+        files = sorted(
+            (f for f in os.listdir(PRED_DIR) if re.fullmatch(r"\d{4}-\d{2}-\d{2}\.json", f)),
+            reverse=True,
+        )
+        for fn in files:
+            try:
+                with open(os.path.join(PRED_DIR, fn), encoding="utf-8") as f:
+                    rec = json.load(f)
+            except Exception:
+                continue
+            items.append({
+                "date": rec.get("date"),
+                "generated_at": rec.get("generated_at"),
+                "model": rec.get("model"),
+                "web_search": rec.get("web_search"),
+                "candidate_count": rec.get("candidate_count"),
+                "rec_count": len(rec.get("recommendations", [])),
+                "reviewed": rec.get("reviewed", False),
+                "review_at": rec.get("review_at"),
+                "accuracy": rec.get("accuracy"),
+                "hit_count": rec.get("hit_count"),
+                "pred_count": rec.get("pred_count"),
+            })
+            if rec.get("reviewed"):
+                grand_total += rec.get("pred_count", 0) or 0
+                grand_hit += rec.get("hit_count", 0) or 0
+    overall = round(grand_hit / grand_total, 4) if grand_total else None
+    return {
+        "items": items,
+        "overall_accuracy": overall,
+        "total_predictions": grand_total,
+        "total_hit": grand_hit,
+        "reviewed_days": sum(1 for i in items if i["reviewed"]),
+    }
+
+
 def _save_prediction(date_str: str, record: dict):
     _ensure_dir()
     with open(_pred_path(date_str), "w", encoding="utf-8", newline="\n") as f:
@@ -191,6 +276,15 @@ def _save_prediction(date_str: str, record: dict):
 
 def _fmt(v, suffix=""):
     return "--" if v is None else f"{v}{suffix}"
+
+
+def _fmt_tech(p) -> str:
+    """技术面摘要：偏多/偏空+评分，用于 markdown 日志的技术面列。"""
+    bias = p.get("tech_bias")
+    score = p.get("tech_score")
+    if bias is None or score is None:
+        return "--"
+    return f"{bias} {score:+d}"
 
 
 def _write_markdown(date_str: str, record: dict):
@@ -207,25 +301,25 @@ def _write_markdown(date_str: str, record: dict):
     if recs:
         lines += ["", f"## 🔮 推荐（预测涨幅 Top {len(recs)}）", ""]
         by_sym = {p["symbol"]: p for p in record["predictions"]}
-        lines.append("| 代码 | 名称 | 预测涨幅 | 置信度 | 理由 |" + ("  实际 | 命中 |" if record.get("reviewed") else ""))
-        lines.append("|------|------|---------|--------|------|" + ("------|------|" if record.get("reviewed") else ""))
+        lines.append("| 代码 | 名称 | 预测涨幅 | 置信度 | 技术面 | 理由 |" + ("  实际 | 命中 |" if record.get("reviewed") else ""))
+        lines.append("|------|------|---------|--------|--------|------|" + ("------|------|" if record.get("reviewed") else ""))
         for sym in recs:
             p = by_sym.get(sym, {})
-            row = f"| {sym} | {p.get('name','')} | {_fmt(p.get('expected_pct'),'%')} | {_fmt(p.get('confidence'))} | {p.get('reason','')} |"
+            row = f"| {sym} | {p.get('name','')} | {_fmt(p.get('expected_pct'),'%')} | {_fmt(p.get('confidence'))} | {_fmt_tech(p)} | {p.get('reason','')} |"
             if record.get("reviewed"):
                 hit = p.get("hit")
                 row += f" {_fmt(p.get('actual_pct'),'%')} | {'✅' if hit else '❌' if hit is not None else '—'} |"
             lines.append(row)
     # 全部预测明细
     lines += ["", "## 全部候选预测", ""]
-    header = "| 代码 | 名称 | 方向 | 预测涨幅 | 置信度 | 理由 |"
-    sep = "|------|------|------|---------|--------|------|"
+    header = "| 代码 | 名称 | 方向 | 预测涨幅 | 置信度 | 技术面 | 理由 |"
+    sep = "|------|------|------|---------|--------|--------|------|"
     if record.get("reviewed"):
         header += " 实际涨幅 | 命中 |"
         sep += "---------|------|"
     lines += [header, sep]
     for p in record["predictions"]:
-        row = f"| {p['symbol']} | {p.get('name','')} | {_fmt(p.get('direction'))} | {_fmt(p.get('expected_pct'),'%')} | {_fmt(p.get('confidence'))} | {p.get('reason','')} |"
+        row = f"| {p['symbol']} | {p.get('name','')} | {_fmt(p.get('direction'))} | {_fmt(p.get('expected_pct'),'%')} | {_fmt(p.get('confidence'))} | {_fmt_tech(p)} | {p.get('reason','')} |"
         if record.get("reviewed"):
             hit = p.get("hit")
             row += f" {_fmt(p.get('actual_pct'),'%')} | {'✅' if hit else '❌' if hit is not None else '—'} |"
@@ -247,10 +341,12 @@ def run_daily_prediction(date_str: Optional[str] = None, use_web_search: bool = 
     candidates = select_candidates()
     if not candidates:
         raise ValueError("无法获取候选股票（行情未就绪），请确认服务已加载行情数据。")
+    attach_indicators(candidates)   # 预计算技术指标，喂给模型并参与排序
     predictions = predict_candidates(candidates, use_web_search=use_web_search)
 
+    # 推荐排序：AI 看涨的票里，优先技术面也共振偏多的（综合分 = 预测涨幅 + 技术评分权重）
     ups = [p for p in predictions if p.get("direction") == "up" and isinstance(p.get("expected_pct"), (int, float))]
-    ups.sort(key=lambda x: x["expected_pct"], reverse=True)
+    ups.sort(key=lambda x: x["expected_pct"] + 0.5 * (x.get("tech_score") or 0), reverse=True)
     recommendations = [p["symbol"] for p in ups[:top_n]]
 
     record = {

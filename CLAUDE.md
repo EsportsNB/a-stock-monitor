@@ -36,7 +36,9 @@ Stop-Process -Name python, pythonw -Force -ErrorAction SilentlyContinue
 | `app/stock_monitor.py` | 核心：行情拉取、缓存、异动检测、关注列表、分时接口 |
 | `app/main.py` | FastAPI 路由 |
 | `app/static/index.html` | 单页前端（Chart.js，无构建工具） |
-| `app/ai_predictor.py` | AI 预测模块（智谱 GLM-4-Flash） |
+| `app/ai_predictor.py` | AI 预测模块（智谱 GLM-4-Flash）；预测前用 indicators 预计算技术面喂模型并参与排序 |
+| `app/indicators.py` | 技术指标计算：MA/MACD/KDJ/RSI/BOLL/量价 + 综合多空评分（纯 Python） |
+| `docs/trading-knowledge.md` | 短线技术分析知识库，indicators 与预测提示词的规则依据 |
 | `run_server.py` | 无窗口启动入口，重定向 stdout/stderr 到 logs/service.log |
 | `predict_daily.ps1` | 每日 15:30 调度脚本（复盘 + 预测） |
 | `watchlist.json` | 关注列表持久化（gitignore） |
