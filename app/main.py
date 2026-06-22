@@ -22,6 +22,7 @@ from .stock_monitor import (
     get_bid_ask,
     get_index_snapshots,
     get_stock_history,
+    get_stock_intraday,
     get_stock_list,
     get_stock_trends,
     get_watchlist_data,
@@ -118,6 +119,18 @@ async def stock_history(symbol: str = Path(..., description="股票代码，支�
 async def stock_bidask(symbol: str = Path(..., description="股票代码，支持 600519 / 600519.SH")):
     try:
         return await run_in_threadpool(get_bid_ask, symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@app.get("/api/stock/{symbol}/intraday")
+async def stock_intraday(
+    symbol: str = Path(..., description="股票代码，支持 600519 / 600519.SH"),
+    scale: int = Query(1, ge=1, le=60, description="K 线周期（分钟），1/5/15/30/60"),
+):
+    """分时行情（新浪分钟级 K 线）。scale=1 返回 1 分钟数据，覆盖当日全部交易时段。"""
+    try:
+        return await run_in_threadpool(get_stock_intraday, symbol, scale)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
 

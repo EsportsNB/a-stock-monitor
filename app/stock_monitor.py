@@ -1,6 +1,7 @@
 import os
 import json
 import math
+import re
 import akshare as ak
 import pandas as pd
 import requests
@@ -947,3 +948,72 @@ def _extract_watch_alerts(items: List[dict]) -> List[dict]:
                 "current_price": s["current_price"],
             })
     return alerts
+
+
+def get_stock_intraday(symbol: str, scale: int = 1) -> dict:
+    """获取分时行情（新浪 JSONP 分钟级 K 线）。
+    scale=1 为 1 分钟，scale=5 为 5 分钟，最大 60。
+    datalen=241 覆盖一个完整交易日（09:30-11:30 + 13:00-15:00 共 240 分钟）。
+    """
+    full = _symbol_to_full_code(symbol)   # sh600519
+    url = (
+        "https://quotes.sina.cn/cn/api/jsonp_v2.php/var_d"
+        "/CN_MarketDataService.getKLineData"
+        f"?symbol={full}&scale={scale}&ma=no&datalen=241"
+    )
+    try:
+        resp = requests.get(
+            url,
+            headers={
+                "Referer": "https://finance.sina.com.cn",
+                "User-Agent": "Mozilla/5.0",
+            },
+            timeout=10,
+        )
+        resp.encoding = "utf-8"
+    except Exception as exc:
+        raise ValueError(f"分时行情获取失败：{exc}") from exc
+
+    text = resp.text.strip()
+    if not text:
+        raise ValueError(f"未获取到分时数据（非交易时段或代码错误）：{symbol}")
+
+    # 剥离 JSONP 包装：/*...*/ \n var_d([...]) 或 var_d(null)
+    m = re.search(r'\[.*\]', text, re.DOTALL)
+    if not m:
+        raise ValueError(f"分时数据为空（可能非交易时段）：{symbol}")
+
+    try:
+        data = json.loads(m.group())
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"分时数据格式异常：{exc}") from exc
+
+    bars = []
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        bars.append({
+            "time": item.get("day", ""),
+            "open": _parse_number(item.get("open")),
+            "high": _parse_number(item.get("high")),
+            "low": _parse_number(item.get("low")),
+            "close": _parse_number(item.get("close")),
+            "volume": _parse_number(item.get("volume")),
+        })
+
+    # 取当日昨收（用于分时图画昨收参考线）
+    prev_close = None
+    with _cache_lock:
+        spot = _cache["spot_df"]
+    if spot is not None:
+        code_col = spot["代码"].astype(str)
+        row = spot.loc[code_col == full]
+        if not row.empty:
+            prev_close = _parse_number(row.iloc[0].get("昨收"))
+
+    return {
+        "symbol": normalize_symbol(symbol),
+        "scale": scale,
+        "prev_close": prev_close,
+        "bars": bars,
+    }

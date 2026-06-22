@@ -24,6 +24,9 @@
     .pager { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 16px; }
     .chart-card { display: grid; gap: 18px; }
     .chart-box { min-height: 320px; }
+    .chart-tab { padding: 4px 14px; font-size: 13px; border: 1px solid #d1d5db; border-radius: 4px; background: #f9fafb; cursor: pointer; color: #374151; }
+    .chart-tab.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    #intradayVolChart { min-height: 70px !important; max-height: 70px !important; }
     .summary-block { padding: 12px 14px; background: #f9fafb; border-radius: 10px; color: #333; }
 
     /* —— 关注列表 / 大户异动告警 —— */
@@ -227,7 +230,24 @@
           <div class="summary-block" id="selectedStock" style="flex:1; margin:0;">未选择股票，点击任意股票行查看走势图。</div>
           <button id="watchToggleBtn" style="display:none; white-space:nowrap;">★ 加入关注</button>
         </div>
-        <div class="chart-box" style="margin-top:14px;"><canvas id="stockChart"></canvas></div>
+        <!-- 图表 tab 切换 -->
+        <div style="margin-top:12px; display:flex; gap:6px; align-items:center;">
+          <button id="tabDaily" class="chart-tab active" onclick="switchChartTab('daily')">日K线</button>
+          <button id="tabIntraday" class="chart-tab" onclick="switchChartTab('intraday')">分时图</button>
+          <select id="intradayScale" style="display:none; margin-left:6px; font-size:12px; padding:2px 6px; border:1px solid #d1d5db; border-radius:4px;">
+            <option value="1">1分钟</option>
+            <option value="5">5分钟</option>
+            <option value="15">15分钟</option>
+            <option value="30">30分钟</option>
+            <option value="60">60分钟</option>
+          </select>
+          <span id="intradayRefreshHint" style="display:none; font-size:11px; color:#6b7280; margin-left:4px;">每30秒自动刷新</span>
+        </div>
+        <div class="chart-box" style="margin-top:10px; display:block;" id="dailyChartBox"><canvas id="stockChart"></canvas></div>
+        <div class="chart-box" style="margin-top:10px; display:none;" id="intradayChartBox">
+          <canvas id="intradayChart"></canvas>
+          <canvas id="intradayVolChart" style="margin-top:6px; height:70px !important;"></canvas>
+        </div>
         <div id="bidAsk" class="bidask-block"></div>
       </div>
     </div>
@@ -266,12 +286,16 @@
     const pageSize = 20;
     let total = 0;
     let stockChart = null;
+    let intradayChart = null;
+    let intradayVolChart = null;
     let selectedSymbol = '';
     let watchedSymbols = new Set();
     let sortBy = 'code';
     let sortOrder = 'asc';
     let filterMode = 'all';
     let trendMode = 'all';
+    let activeChartTab = 'daily';   // 'daily' | 'intraday'
+    let intradayTimer = null;
 
     async function loadIndices() {
       try {
@@ -384,18 +408,16 @@
       highlightSelected();
       updateWatchButton();
       selectedStock.textContent = `加载 ${symbol} 的走势图...`;
-      try {
-        const res = await fetch(`/api/stock/${encodeURIComponent(symbol)}/history`);
-        if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.detail || '获取历史数据失败');
-        }
-        const data = await res.json();
-        selectedStock.innerHTML = `<strong>${data.name} (${data.symbol})</strong> - 最近 ${data.history.length} 个交易日收盘价`;
-        renderChart(data.history.map(item => item.date), data.history.map(item => item.close));
-      } catch (error) {
-        selectedStock.textContent = error.message;
-      }
+      // 日K线与分时图并行加载
+      const histPromise = fetch(`/api/stock/${encodeURIComponent(symbol)}/history`)
+        .then(r => r.ok ? r.json() : r.json().then(d => { throw new Error(d.detail || '获取历史数据失败'); }))
+        .then(data => {
+          selectedStock.innerHTML = `<strong>${data.name} (${data.symbol})</strong> - 最近 ${data.history.length} 个交易日收盘价`;
+          renderChart(data.history.map(item => item.date), data.history.map(item => item.close));
+        })
+        .catch(e => { selectedStock.textContent = e.message; });
+      const intradayPromise = activeChartTab === 'intraday' ? loadIntraday() : Promise.resolve();
+      await Promise.all([histPromise, intradayPromise]);
       loadBidAsk(symbol);
     }
 
@@ -513,6 +535,145 @@
         stockChart.data.labels = labels;
         stockChart.data.datasets[0].data = values;
         stockChart.update();
+      }
+    }
+
+    // ===== 分时图 =====
+    function switchChartTab(tab) {
+      activeChartTab = tab;
+      document.getElementById('tabDaily').classList.toggle('active', tab === 'daily');
+      document.getElementById('tabIntraday').classList.toggle('active', tab === 'intraday');
+      document.getElementById('dailyChartBox').style.display = tab === 'daily' ? 'block' : 'none';
+      document.getElementById('intradayChartBox').style.display = tab === 'intraday' ? 'block' : 'none';
+      document.getElementById('intradayScale').style.display = tab === 'intraday' ? '' : 'none';
+      document.getElementById('intradayRefreshHint').style.display = tab === 'intraday' ? '' : 'none';
+      if (tab === 'intraday') {
+        if (selectedSymbol) loadIntraday();
+        clearInterval(intradayTimer);
+        intradayTimer = setInterval(() => { if (selectedSymbol) loadIntraday(); }, 30000);
+      } else {
+        clearInterval(intradayTimer);
+        intradayTimer = null;
+      }
+    }
+
+    document.getElementById('intradayScale').addEventListener('change', () => { if (selectedSymbol) loadIntraday(); });
+
+    async function loadIntraday() {
+      if (!selectedSymbol) return;
+      const scale = document.getElementById('intradayScale').value;
+      try {
+        const res = await fetch(`/api/stock/${encodeURIComponent(selectedSymbol)}/intraday?scale=${scale}`);
+        if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取分时数据失败'); }
+        const data = await res.json();
+        renderIntraday(data);
+      } catch (e) {
+        console.warn('分时图加载失败:', e.message);
+      }
+    }
+
+    function renderIntraday(data) {
+      const bars = data.bars || [];
+      const prevClose = data.prev_close;
+      // X 轴只显示 HH:MM
+      const labels = bars.map(b => b.time ? b.time.slice(11, 16) : '');
+      const closes = bars.map(b => b.close);
+      const volumes = bars.map(b => b.volume != null ? b.volume / 100 : 0);  // 转为手
+
+      // 价格线颜色：高于昨收红，低于昨收绿（A股习惯）
+      const lastPrice = closes[closes.length - 1];
+      const lineColor = (prevClose == null || lastPrice == null || lastPrice >= prevClose) ? '#dc2626' : '#16a34a';
+      const fillColor = (prevClose == null || lastPrice == null || lastPrice >= prevClose) ? 'rgba(220,38,38,0.10)' : 'rgba(22,163,74,0.10)';
+
+      const priceCanvas = document.getElementById('intradayChart');
+      const volCanvas = document.getElementById('intradayVolChart');
+
+      const commonX = {
+        display: true,
+        ticks: { maxTicksLimit: 12, font: { size: 11 }, color: '#6b7280' },
+        grid: { color: '#f3f4f6' },
+      };
+
+      // --- 价格图 ---
+      if (!intradayChart) {
+        intradayChart = new Chart(priceCanvas, {
+          type: 'line',
+          data: {
+            labels,
+            datasets: [
+              {
+                label: '价格',
+                data: closes,
+                borderColor: lineColor,
+                backgroundColor: fillColor,
+                borderWidth: 1.5,
+                tension: 0,
+                fill: true,
+                pointRadius: 0,
+                pointHoverRadius: 3,
+              },
+              // 昨收参考线
+              prevClose != null ? {
+                label: '昨收',
+                data: bars.map(() => prevClose),
+                borderColor: '#9ca3af',
+                borderWidth: 1,
+                borderDash: [4, 4],
+                pointRadius: 0,
+                fill: false,
+              } : null,
+            ].filter(Boolean),
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+              x: commonX,
+              y: { display: true, grid: { color: '#f3f4f6' }, ticks: { font: { size: 11 }, color: '#6b7280' } },
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: { mode: 'index', intersect: false, callbacks: {
+                label: ctx => ctx.dataset.label === '昨收' ? `昨收: ${ctx.parsed.y?.toFixed(2)}` : `价格: ${ctx.parsed.y?.toFixed(2)}`,
+              }},
+            },
+          },
+        });
+      } else {
+        intradayChart.data.labels = labels;
+        intradayChart.data.datasets[0].data = closes;
+        intradayChart.data.datasets[0].borderColor = lineColor;
+        intradayChart.data.datasets[0].backgroundColor = fillColor;
+        if (intradayChart.data.datasets[1]) intradayChart.data.datasets[1].data = bars.map(() => prevClose);
+        intradayChart.update('none');
+      }
+
+      // --- 成交量图 ---
+      const volColor = bars.map(b => (b.close != null && b.open != null && b.close >= b.open) ? 'rgba(220,38,38,0.65)' : 'rgba(22,163,74,0.65)');
+      if (!intradayVolChart) {
+        intradayVolChart = new Chart(volCanvas, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [{ label: '成交量(手)', data: volumes, backgroundColor: volColor, borderWidth: 0 }],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            scales: {
+              x: { ...commonX, display: false },
+              y: { display: true, ticks: { font: { size: 10 }, color: '#9ca3af', callback: v => v >= 10000 ? (v/10000).toFixed(0)+'万' : v }, grid: { color: '#f3f4f6' } },
+            },
+            plugins: { legend: { display: false }, tooltip: { mode: 'index', intersect: false } },
+          },
+        });
+      } else {
+        intradayVolChart.data.labels = labels;
+        intradayVolChart.data.datasets[0].data = volumes;
+        intradayVolChart.data.datasets[0].backgroundColor = volColor;
+        intradayVolChart.update('none');
       }
     }
 
