@@ -2,6 +2,9 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
   <title>A股实时监控</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -386,15 +389,20 @@
         const descMap = {
           '上证指数': '上海交易所全部股票，权重偏大盘蓝筹（银行、白酒、券商等），最能代表A股整体。',
           '深证成指': '深圳交易所500只代表股，制造业/科技成长占比高，弹性比上证大。',
-          '创业板指': '创业板100只成长股（新能源、医药、半导体等），波动最大、最“激进”。',
+          '创业板指': '创业板100只成长股（新能源、医药、半导体等），波动最大、最”激进”。',
+          '台湾加权': '台湾证交所全部上市股票加权指数（TAIEX），涵盖台积电等科技权重股，反映台股整体走势。',
         };
+        indicesEl.style.display = 'grid';
+        indicesEl.style.gridTemplateColumns = `repeat(${data.length}, 1fr)`;
+        indicesEl.style.gap = '12px';
+        indicesEl.style.alignItems = '';
         indicesEl.innerHTML = data.map(item => {
-          const sign = item.change_percent >= 0 ? 'positive' : 'negative';
+          const sign = (item.change_percent ?? 0) >= 0 ? 'positive' : 'negative';
           const desc = descMap[item.name] || '';
           return `
-            <div style="min-width: 220px; flex:1; background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:14px;">
+            <div style="background:var(--card-2); border:1px solid var(--border); border-radius:12px; padding:14px;">
               <div><strong>${item.name}</strong></div>
-              <div style="margin-top:4px;color:var(--muted);font-size:12px;line-height:1.4;">${desc}</div>
+              <div style="margin-top:4px;color:var(--muted);font-size:12px;line-height:1.4;min-height:32px;">${desc}</div>
               <div style="margin-top:10px;font-size:20px;" title="当前点位">${item.price != null ? item.price.toFixed(2) : '--'}</div>
               <div class="${sign}" style="margin-top:6px;" title="相比昨日收盘的涨跌点数与涨跌幅">${item.change != null ? item.change.toFixed(2) : '--'} (${item.change_percent != null ? item.change_percent.toFixed(2) + '%' : '--'})</div>
               <div style="margin-top:6px;color:var(--muted);font-size:13px;">${item.timestamp}</div>
