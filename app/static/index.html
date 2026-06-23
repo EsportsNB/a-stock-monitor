@@ -230,9 +230,10 @@
       </div>
       <div class="status" id="predictStatus">加载中...</div>
       <div id="reviewCommentBox" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:8px 0;font-size:13px;line-height:1.7;white-space:pre-wrap;"></div>
+      <div id="sectorContextBox" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin:8px 0;font-size:12px;line-height:1.6;white-space:pre-wrap;color:var(--muted);"></div>
       <div style="overflow-x:auto;">
         <table>
-          <thead><tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>技术面</th><th>理由（含联网消息）</th></tr></thead>
+          <thead><tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>技术面</th><th>板块</th><th>理由（含联网消息）</th></tr></thead>
           <tbody id="predictTable"></tbody>
         </table>
       </div>
@@ -377,6 +378,7 @@
     const predictAccuracy = document.getElementById('predictAccuracy');
     const dailyBtn = document.getElementById('dailyBtn');
     const reviewCommentBox = document.getElementById('reviewCommentBox');
+    const sectorContextBox = document.getElementById('sectorContextBox');
     const runPredictBtn = document.getElementById('runPredictBtn');
     const togglePredictBtn = document.getElementById('togglePredictBtn');
     const watchToggleBtn = document.getElementById('watchToggleBtn');
@@ -1051,7 +1053,7 @@
       }
       togglePredictBtn.textContent = predictShowAll ? '只看推荐' : `查看全部 ${(d.predictions || []).length} 只`;
       if (!rows.length) {
-        predictTable.innerHTML = '<tr><td colspan="7" style="color:var(--muted);">本次预测没有看涨的推荐，点「查看全部」看完整候选。</td></tr>';
+        predictTable.innerHTML = '<tr><td colspan="8" style="color:var(--muted);">本次预测没有看涨的推荐，点「查看全部」看完整候选。</td></tr>';
         return;
       }
       predictTable.innerHTML = rows.map(p => {
@@ -1064,12 +1066,24 @@
           const tcls = p.tech_bias === '偏多' ? 'positive' : p.tech_bias === '偏空' ? 'negative' : '';
           techCell = `<span class="${tcls}">${p.tech_bias} ${p.tech_score >= 0 ? '+' : ''}${p.tech_score}</span>`;
         }
+        // 预测涨幅：若因板块走弱被打折，标⚠️并 tooltip 显示原值
+        let pctCell = p.expected_pct == null ? '--' : p.expected_pct + '%';
+        if (p.sector_discounted) {
+          pctCell = `<span title="板块走弱已打折，原预测 ${p.expected_pct_raw}%">⚠️${pctCell}</span>`;
+        }
+        // 板块单元格：弱势板块标红
+        let secCell = p.sector || '--';
+        if (p.sector_weak) {
+          const tag = String(p.sector_weak).toLowerCase().startsWith('very') ? '明显走弱' : '走弱';
+          secCell = `<span class="negative" title="所属板块${tag}">${p.sector || '--'}⚠</span>`;
+        }
         return `<tr data-symbol="${p.symbol}">
           <td>${star}${p.symbol}</td><td>${p.name}</td>
           <td class="${cls}">${dir}</td>
-          <td class="${cls}">${p.expected_pct == null ? '--' : p.expected_pct + '%'}${hitMark}</td>
+          <td class="${cls}">${pctCell}${hitMark}</td>
           <td>${p.confidence == null ? '--' : Number(p.confidence).toFixed(2)}</td>
           <td>${techCell}</td>
+          <td>${secCell}</td>
           <td>${p.reason || ''}</td></tr>`;
       }).join('');
       predictTable.querySelectorAll('tr[data-symbol]').forEach(tr =>
@@ -1092,6 +1106,14 @@
           reviewCommentBox.style.display = 'block';
         } else {
           reviewCommentBox.style.display = 'none';
+        }
+
+        // 板块动能上下文（喂给模型判断系统性风险的走弱/走强名单）
+        if (d.sector_context) {
+          sectorContextBox.textContent = '📊 ' + d.sector_context;
+          sectorContextBox.style.display = 'block';
+        } else {
+          sectorContextBox.style.display = 'none';
         }
 
         if (d.status === 'no_prediction') {

@@ -110,6 +110,112 @@ def attach_indicators(candidates: List[dict]) -> List[dict]:
 
 
 # ============================================================
+# 板块动能：同花顺行业板块（~90 细分板块）。
+# 数据源在本机只能可靠拿到“板块级动能”，拿不到完整的“个股→板块”映射
+# （东方财富不可达、同花顺无成分接口、新浪行业仅覆盖 53% 且漏掉工业富联等）。
+# 因此架构上：我方提供可靠的板块动能数据 → 由 GLM（懂个股属于哪个板块/题材）判断
+# 该股是否处于走弱板块（输出 sector_weak 布尔）→ 我方据此对看涨预测机械打折。
+# ============================================================
+
+SECTOR_HISTORY_PATH = os.path.join(PRED_DIR, "ths_sector_history.json")
+SECTOR_HISTORY_KEEP = 12        # 滚动保留的交易日数
+SECTOR_MOMENTUM_DAYS = 5        # 近 N 日累计动能
+SECTOR_WEAK = -3.0              # 近5日累计跌幅低于此，视为板块走弱
+SECTOR_VERY_WEAK = -6.0         # 板块明显系统性下跌
+SECTOR_STRONG = 3.0             # 走强阈值
+
+
+def _ths_board_today() -> dict:
+    """{同花顺行业板块名: 今日涨跌幅%}，约 90 个细分板块（半导体/消费电子/光学光电子…）。"""
+    import akshare as ak
+    df = ak.stock_board_industry_summary_ths()
+    namecol = "板块" if "板块" in df.columns else df.columns[1]
+    pctcol = "涨跌幅" if "涨跌幅" in df.columns else None
+    out = {}
+    for _, r in df.iterrows():
+        try:
+            out[str(r[namecol])] = round(float(r[pctcol]), 2)
+        except Exception:
+            continue
+    return out
+
+
+def sector_momentum_digest() -> dict:
+    """计算各同花顺行业板块近5日累计动能，返回 {板块名: 动能%}，并维护滚动历史。
+    历史不足时退化为当日值——板块当日大跌本身也是有效的系统性风险信号。"""
+    try:
+        today_pct = _ths_board_today()
+    except Exception as exc:
+        print(f"板块动能获取失败：{exc}")
+        return {}
+    if not today_pct:
+        return {}
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    hist = {}
+    try:
+        with open(SECTOR_HISTORY_PATH, encoding="utf-8") as f:
+            hist = json.load(f)
+    except Exception:
+        pass
+    hist[today] = today_pct
+    for d in sorted(hist)[:-SECTOR_HISTORY_KEEP]:
+        hist.pop(d, None)
+    try:
+        _ensure_dir()
+        with open(SECTOR_HISTORY_PATH, "w", encoding="utf-8", newline="\n") as f:
+            json.dump(hist, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+    recent = sorted(hist)[-SECTOR_MOMENTUM_DAYS:]
+    momentum = {}
+    for name in today_pct:
+        vals = [hist[d][name] for d in recent if name in hist[d]]
+        momentum[name] = round(sum(vals), 2)
+    return momentum
+
+
+def format_sector_context(momentum: dict, top: int = 12) -> str:
+    """生成喂给模型的板块动能上下文：最弱 / 最强板块名单。"""
+    if not momentum:
+        return ""
+    ranked = sorted(momentum.items(), key=lambda x: x[1])
+    weak = [f"{n}({v:+.1f}%)" for n, v in ranked if v <= SECTOR_WEAK][:top]
+    strong = [f"{n}({v:+.1f}%)" for n, v in reversed(ranked) if v >= SECTOR_STRONG][:top]
+    parts = []
+    if weak:
+        parts.append("【近5日走弱板块】" + "、".join(weak))
+    if strong:
+        parts.append("【近5日走强板块】" + "、".join(strong))
+    return "\n".join(parts)
+
+
+def apply_sector_discount(predictions: List[dict]) -> List[dict]:
+    """据 GLM 返回的 sector_weak 标记，对看涨预测打折：降低置信度与预测涨幅，
+    sector_weak 为 'very' 时更狠，打折后涨幅很小则方向降级为 flat。
+    保留原值（confidence_raw / expected_pct_raw）并标记 sector_discounted。"""
+    for p in predictions:
+        flag = p.get("sector_weak")
+        if not flag or p.get("direction") != "up":
+            continue
+        factor = 0.5 if str(flag).lower() in ("very", "very_weak", "2") else 0.7
+
+        conf = p.get("confidence")
+        exp = p.get("expected_pct")
+        if isinstance(conf, (int, float)):
+            p["confidence_raw"] = conf
+            p["confidence"] = round(conf * factor, 2)
+        if isinstance(exp, (int, float)):
+            p["expected_pct_raw"] = exp
+            p["expected_pct"] = round(exp * factor, 2)
+            if factor == 0.5 and p["expected_pct"] < 1.0:
+                p["direction"] = "flat"
+        p["sector_discounted"] = True
+    return predictions
+
+
+# ============================================================
 # 预测：分批调用 GLM
 # ============================================================
 
@@ -130,7 +236,7 @@ def _tech_line(s: dict) -> str:
     )
 
 
-def _build_messages(batch: List[dict]):
+def _build_messages(batch: List[dict], sector_context: str = ""):
     lines = []
     for s in batch:
         lines.append(
@@ -147,12 +253,19 @@ def _build_messages(batch: List[dict]):
         "③KDJ低位金叉偏多，高位死叉或超买偏空；④RSI超卖(<20)反弹偏多，超买(>80)偏空；"
         "⑤价格破布林下轨易超跌反弹，破上轨滞涨偏空；⑥量增价涨偏多，量增价跌/高位放量滞涨偏空；"
         "⑦多个指标同向共振时可靠性更高，技术评分已综合上述维度。\n"
+        "板块动能（最重要的系统性风险）：下面给出近期走弱/走强的板块名单。请你判断每只股票所属的"
+        "行业/题材板块（你比数据更懂个股归属，如工业富联属AI算力/消费电子、中际旭创属光模块/CPO），"
+        "若其所属板块在【走弱板块】名单中，则板块系统性下跌会拖累个股，即使技术面偏多也必须保守："
+        "降低看涨置信度、调低预测涨幅，板块明显走弱时甚至改判flat——这是最常见的预测失败原因。\n"
         "消息面优先级：重大利好/利空公告、业绩、政策可覆盖技术面信号。技术与消息冲突时说明并降低置信度。\n"
         "务必只输出一个JSON数组，禁止任何多余文字。每个元素格式："
         '{"symbol":"代码","direction":"up或down或flat","expected_pct":预测涨跌幅数字,'
-        '"confidence":0到1置信度,"reason":"40字内理由，需点明关键技术信号+搜到的消息"}'
+        '"confidence":0到1置信度,"sector":"你判断的所属板块/题材名","sector_weak":'
+        '"none或weak或very(该股所属板块是否在走弱名单：明显走弱填very，走弱填weak，否则none)",'
+        '"reason":"40字内理由，需点明关键技术信号+搜到的消息+板块状态"}'
     )
-    user = f"请综合技术面与消息面预测下列股票下一交易日涨跌，只返回JSON数组：\n{stock_block}"
+    ctx = f"\n\n{sector_context}\n" if sector_context else "\n"
+    user = f"请综合技术面、板块动能与消息面预测下列股票下一交易日涨跌，只返回JSON数组：{ctx}\n{stock_block}"
     return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
@@ -169,12 +282,12 @@ def _parse_predictions(text: str) -> List[dict]:
         return []
 
 
-def predict_candidates(candidates: List[dict], use_web_search: bool = True) -> List[dict]:
+def predict_candidates(candidates: List[dict], use_web_search: bool = True, sector_context: str = "") -> List[dict]:
     predictions = []
     for i in range(0, len(candidates), BATCH_SIZE):
         batch = candidates[i:i + BATCH_SIZE]
         try:
-            text = _call_glm(_build_messages(batch), use_web_search=use_web_search)
+            text = _call_glm(_build_messages(batch, sector_context), use_web_search=use_web_search)
             preds = _parse_predictions(text)
         except Exception as exc:
             print(f"AI 预测批次失败（{i}）：{exc}")
@@ -192,6 +305,8 @@ def predict_candidates(candidates: List[dict], use_web_search: bool = True) -> L
                 "direction": p.get("direction"),
                 "expected_pct": exp if isinstance(exp, (int, float)) else None,
                 "confidence": p.get("confidence"),
+                "sector": p.get("sector"),
+                "sector_weak": (p.get("sector_weak") if str(p.get("sector_weak", "none")).lower() not in ("none", "", "false", "0") else None),
                 "reason": p.get("reason"),
                 "tech_score": tech.get("score") if tech else None,
                 "tech_bias": tech.get("bias") if tech else None,
@@ -342,7 +457,20 @@ def run_daily_prediction(date_str: Optional[str] = None, use_web_search: bool = 
     if not candidates:
         raise ValueError("无法获取候选股票（行情未就绪），请确认服务已加载行情数据。")
     attach_indicators(candidates)   # 预计算技术指标，喂给模型并参与排序
-    predictions = predict_candidates(candidates, use_web_search=use_web_search)
+
+    # 板块动能：取近5日各行业板块动能，生成走弱/走强名单喂给模型判断系统性风险
+    momentum = {}
+    sector_context = ""
+    try:
+        momentum = sector_momentum_digest()
+        sector_context = format_sector_context(momentum)
+    except Exception as exc:
+        print(f"板块动能计算失败（跳过板块判断）：{exc}")
+
+    predictions = predict_candidates(candidates, use_web_search=use_web_search, sector_context=sector_context)
+
+    # 弱势板块对看涨预测打折（机械防御：据 GLM 给出的 sector_weak 标记降权）
+    apply_sector_discount(predictions)
 
     # 推荐排序：AI 看涨的票里，优先技术面也共振偏多的（综合分 = 预测涨幅 + 技术评分权重）
     ups = [p for p in predictions if p.get("direction") == "up" and isinstance(p.get("expected_pct"), (int, float))]
@@ -355,6 +483,7 @@ def run_daily_prediction(date_str: Optional[str] = None, use_web_search: bool = 
         "model": ZHIPU_MODEL,
         "web_search": use_web_search,
         "candidate_count": len(candidates),
+        "sector_context": sector_context,
         "predictions": predictions,
         "recommendations": recommendations,
         "reviewed": False,
