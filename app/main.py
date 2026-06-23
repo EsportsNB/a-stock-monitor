@@ -29,6 +29,7 @@ from .stock_monitor import (
     remove_from_watchlist,
     spot_source,
     start_background_cache_refresh,
+    start_tw_intraday_poller,
     start_watchlist_polling,
 )
 from .ai_predictor import (
@@ -52,6 +53,8 @@ def startup_event():
     start_background_cache_refresh()
     # 关注列表高频刷新（独立通道，比全市场 30s 更实时）
     start_watchlist_polling()
+    # 台股分时 MIS 实时轮询（每 30 秒，仅开盘时段）
+    start_tw_intraday_poller()
 
 
 def _require_cache_ready():

@@ -8,6 +8,7 @@ import requests
 import time
 from collections import deque
 from datetime import datetime, timedelta
+import threading
 from threading import RLock, Thread
 from typing import List, Optional
 
@@ -1323,8 +1324,8 @@ def _extract_watch_alerts(items: List[dict]) -> List[dict]:
     return alerts
 
 
-def _get_tw_intraday(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
-    """从 Yahoo Finance 拉取台股分时 K 线（走代理）。"""
+def _get_tw_intraday_yahoo(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
+    """从 Yahoo Finance 拉取台股分时 K 线（走代理，约 15 分钟延迟）。"""
     from datetime import timezone
     code = symbol.split(".")[0]
     yf_sym = f"{code}.TW"
@@ -1397,6 +1398,177 @@ def _get_tw_intraday(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
             "date": target.strftime("%Y-%m-%d"), "prev_close": None, "bars": [],
             "has_prev": False, "has_next": day_offset > 0,
         }
+
+
+# ─── TW 分时实时 MIS 轮询 ─────────────────────────────────────────────────────
+
+_tw_intraday_sessions: dict     = {}          # symbol → {date, prev_close, bars, last_v}
+_tw_active_intraday: set        = set()       # 当前需要轮询的 symbol
+_tw_intraday_lock               = threading.Lock()
+
+
+def _tw_market_open() -> bool:
+    """台股是否在交易时段（UTC+8，周一至周五 09:00–13:30）。"""
+    from datetime import timezone
+    tw_tz = timezone(timedelta(hours=8))
+    now = datetime.now(tw_tz)
+    if now.weekday() >= 5:
+        return False
+    t = now.hour * 60 + now.minute
+    return 9 * 60 <= t <= 13 * 60 + 30
+
+
+def _mis_intraday_tick(symbol: str) -> None:
+    """拉一次 MIS 快照，更新该股票的 1 分钟 K 线缓存。"""
+    code = symbol.split(".")[0]
+    try:
+        sess = requests.Session()
+        sess.trust_env = False
+        r = sess.get(
+            "https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
+            params={"ex_ch": f"tse_{code}.tw", "json": "1", "delay": "0"},
+            proxies=_TW_PROXIES, timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        item = r.json()["msgArray"][0]
+    except Exception:
+        return
+
+    z = _parse_number(item.get("z"))
+    if z is None:
+        return  # 收盘或未成交
+
+    v_cum  = _parse_number(item.get("v")) or 0   # 累计成交张数
+    t_raw  = item.get("t", "")                   # "HH:MM:SS"
+    if len(t_raw) < 5:
+        return
+    minute = t_raw[:5]                           # "HH:MM"
+    today  = datetime.now().strftime("%Y-%m-%d")
+
+    with _tw_intraday_lock:
+        session = _tw_intraday_sessions.get(symbol)
+        if session and session.get("date") != today:
+            session = None   # 日期变化，丢弃旧数据
+
+        if session is None:
+            _tw_intraday_sessions[symbol] = {
+                "date":       today,
+                "prev_close": _parse_number(item.get("y")),
+                "bars":       {},
+                "last_v":     v_cum,
+            }
+            return  # 首次 tick 仅初始化
+
+        bars   = session["bars"]
+        last_v = session["last_v"]
+
+        if minute not in bars:
+            bars[minute] = {
+                "time":    f"{today} {minute}",
+                "open":    z, "high": z, "low": z, "close": z,
+                "volume":  max(0, v_cum - last_v),
+                "_v_start": last_v,
+            }
+        else:
+            bar = bars[minute]
+            bar["high"]   = max(bar["high"], z)
+            bar["low"]    = min(bar["low"],  z)
+            bar["close"]  = z
+            bar["volume"] = max(0, v_cum - bar["_v_start"])
+
+        session["last_v"] = v_cum
+
+
+def _tw_intraday_loop() -> None:
+    """后台轮询：每 30 秒更新活跃台股的实时分时快照（仅开盘时段）。"""
+    while True:
+        time.sleep(30)
+        if not _tw_market_open():
+            continue
+        with _tw_intraday_lock:
+            active = list(_tw_active_intraday)
+        for sym in active:
+            try:
+                _mis_intraday_tick(sym)
+            except Exception:
+                pass
+
+
+def start_tw_intraday_poller() -> None:
+    """启动台股分时 MIS 实时轮询后台线程。"""
+    t = threading.Thread(target=_tw_intraday_loop, daemon=True, name="tw-intraday-poll")
+    t.start()
+
+
+def _aggregate_intraday_bars(bars: list, scale: int) -> list:
+    """将 1 分钟 bar 列表聚合为 scale 分钟 bar。bars 须已按时间排序。"""
+    if scale <= 1 or not bars:
+        return bars
+    result: list = []
+    for bar in bars:
+        hhmm = bar["time"][11:16]  # "HH:MM"
+        h, m = int(hhmm[:2]), int(hhmm[3:])
+        slot_min = (h * 60 + m - 9 * 60) // scale * scale  # 相对 09:00 的 slot
+        bh = (9 * 60 + slot_min) // 60
+        bm = (9 * 60 + slot_min) % 60
+        bucket_time = f"{bar['time'][:10]} {bh:02d}:{bm:02d}"
+        if result and result[-1]["time"] == bucket_time:
+            last = result[-1]
+            last["high"]   = max(last["high"],  bar.get("high",  bar["close"]))
+            last["low"]    = min(last["low"],   bar.get("low",   bar["close"]))
+            last["close"]  = bar["close"]
+            last["volume"] = (last.get("volume") or 0) + (bar.get("volume") or 0)
+        else:
+            result.append({
+                "time":   bucket_time,
+                "open":   bar.get("open",  bar["close"]),
+                "high":   bar.get("high",  bar["close"]),
+                "low":    bar.get("low",   bar["close"]),
+                "close":  bar["close"],
+                "volume": bar.get("volume") or 0,
+            })
+    return result
+
+
+def _get_tw_intraday(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
+    """台股分时：Yahoo Finance 历史底图 + TWSE MIS 实时叠加（当天 day_offset=0）。"""
+    is_today = day_offset == 0
+
+    if is_today:
+        # 标记为活跃，确保后台开始轮询
+        with _tw_intraday_lock:
+            _tw_active_intraday.add(symbol)
+        # 立刻拉一次（首次访问时后台还没数据）
+        if symbol not in _tw_intraday_sessions:
+            _mis_intraday_tick(symbol)
+
+    yahoo = _get_tw_intraday_yahoo(symbol, scale, day_offset)
+
+    if not is_today:
+        return yahoo
+
+    with _tw_intraday_lock:
+        session  = _tw_intraday_sessions.get(symbol, {})
+        mis_1min = dict(session.get("bars", {}))   # "HH:MM" → candle
+        mis_prev = session.get("prev_close") or yahoo.get("prev_close")
+
+    if not mis_1min:
+        return yahoo
+
+    # Yahoo bars 已是 scale 分钟级；MIS bars 是 1 分钟级，需聚合
+    mis_agg_list = _aggregate_intraday_bars(
+        [mis_1min[m] for m in sorted(mis_1min)], scale
+    )
+    mis_agg = {b["time"]: b for b in mis_agg_list}  # "YYYY-MM-DD HH:MM" → bar
+
+    # 以 Yahoo bars 为底，MIS bars 覆盖（更实时）
+    yahoo_dict = {b["time"]: b for b in yahoo.get("bars", [])}
+    yahoo_dict.update(mis_agg)
+    merged = [yahoo_dict[t] for t in sorted(yahoo_dict)]
+
+    yahoo["bars"]       = merged
+    yahoo["prev_close"] = mis_prev or yahoo.get("prev_close")
+    return yahoo
 
 
 def get_stock_intraday(symbol: str, scale: int = 1, day_offset: int = 0) -> dict:
