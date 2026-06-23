@@ -517,6 +517,7 @@
 
     async function selectStock(symbol) {
       selectedSymbol = symbol;
+      clearCharts();
       highlightSelected();
       updateWatchButton();
       // 点击后弹出走势图弹窗
@@ -644,6 +645,20 @@
         for (let j = i - n + 1; j <= i; j++) s += values[j];
         return +(s / n).toFixed(3);
       });
+    }
+
+    function clearCharts() {
+      [stockChart, intradayChart, intradayVolChart].forEach(c => {
+        if (!c) return;
+        c.data.labels = [];
+        c.data.datasets.forEach(ds => { ds.data = []; });
+        c.update('none');
+      });
+      document.getElementById('intradayChartArea').style.display = '';
+      document.getElementById('intradayNoSupport').style.display = 'none';
+      document.getElementById('intradayDate').textContent = '--';
+      document.getElementById('intradayPrev').disabled = false;
+      document.getElementById('intradayNext').disabled = false;
     }
 
     function renderChart(labels, values) {
