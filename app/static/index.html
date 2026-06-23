@@ -264,6 +264,13 @@
             <option value="温和下跌">温和下跌</option>
             <option value="快速下跌">快速下跌</option>
           </select></div>
+          <div style="width:150px;"><select id="mktSelect">
+            <option value="all">全部市场</option>
+            <option value="sh">沪A（上证）</option>
+            <option value="sz">深A（深证）</option>
+            <option value="bj">北A（北证）</option>
+            <option value="tw">台股（TWSE）</option>
+          </select></div>
           <div class="status" id="sortHint" style="margin:0;flex:1;min-width:160px;">点击列名排序，再次点击切换升/降序。</div>
         </div>
         <div style="overflow-x:auto;">
@@ -359,6 +366,7 @@
     const watchTable = document.getElementById('watchTable');
     const filterSelect = document.getElementById('filterSelect');
     const trendSelect = document.getElementById('trendSelect');
+    const mktSelect = document.getElementById('mktSelect');
     const bidAsk = document.getElementById('bidAsk');
     const predictStatus = document.getElementById('predictStatus');
     const predictTable = document.getElementById('predictTable');
@@ -438,7 +446,7 @@
     }
 
     async function loadStockPage() {
-      const market = marketSelect.value;
+      const market = mktSelect.value;
       const query = searchInput.value.trim();
       tableStatus.textContent = '加载中...';
       try {
@@ -987,12 +995,12 @@
     });
     // 点击术语问号只看说明，不触发列排序
     document.querySelectorAll('th .help').forEach(h => h.addEventListener('click', e => e.stopPropagation()));
-    // 市场筛选
-    marketSelect.addEventListener('change', () => { page = 1; loadStockPage(); });
     // 涨跌幅筛选
     filterSelect.addEventListener('change', () => { filterMode = filterSelect.value; page = 1; loadStockPage(); });
     // 趋势筛选
     trendSelect.addEventListener('change', () => { trendMode = trendSelect.value; page = 1; loadStockPage(); });
+    // 市场筛选
+    mktSelect.addEventListener('change', () => { page = 1; loadStockPage(); });
 
     searchBtn.addEventListener('click', () => { page = 1; loadStockPage(); });
     prevPage.addEventListener('click', () => { if (page > 1) { page -= 1; loadStockPage(); } });
