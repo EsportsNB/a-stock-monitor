@@ -333,8 +333,11 @@
               <span id="intradayLiveHint" style="font-size:11px; color:#6b7280;">每30秒自动刷新</span>
               <span style="font-size:11px; color:#9ca3af; margin-left:4px;">- - 昨收</span>
             </div>
-            <div style="position:relative; height:220px;"><canvas id="intradayChart"></canvas></div>
-            <div style="position:relative; height:60px; margin-top:6px;"><canvas id="intradayVolChart"></canvas></div>
+            <div id="intradayChartArea">
+              <div style="position:relative; height:220px;"><canvas id="intradayChart"></canvas></div>
+              <div style="position:relative; height:60px; margin-top:6px;"><canvas id="intradayVolChart"></canvas></div>
+            </div>
+            <div id="intradayNoSupport" style="display:none; height:200px; align-items:center; justify-content:center; color:var(--muted); font-size:14px;"></div>
             <div style="font-size:11px; color:#6b7280; margin-top:4px;">
               成交量：<span style="color:#dc2626;">█</span> 收&gt;开（价涨）&nbsp;&nbsp;<span style="color:#16a34a;">█</span> 收&lt;开（价跌）
             </div>
@@ -729,13 +732,20 @@
         const res = await fetch(`/api/stock/${encodeURIComponent(selectedSymbol)}/intraday?scale=${scale}&day_offset=${intradayDayOffset}`);
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取分时数据失败'); }
         const data = await res.json();
-        // 台股/不支持的市场：显示提示
+        // 台股/不支持的市场：隐藏图区，显示居中提示
         if (data.message) {
-          document.getElementById('intradayDate').textContent = data.message;
+          document.getElementById('intradayChartArea').style.display = 'none';
+          const ns = document.getElementById('intradayNoSupport');
+          ns.textContent = data.message;
+          ns.style.display = 'flex';
+          document.getElementById('intradayDate').textContent = '--';
           document.getElementById('intradayPrev').disabled = true;
           document.getElementById('intradayNext').disabled = true;
           return;
         }
+        // 恢复图区（从台股切回A股时）
+        document.getElementById('intradayChartArea').style.display = '';
+        document.getElementById('intradayNoSupport').style.display = 'none';
         // 越界（请求的历史日无数据）：回退一步，提示到头了
         if ((!data.bars || !data.bars.length) && intradayDayOffset > 0) {
           intradayDayOffset -= 1;

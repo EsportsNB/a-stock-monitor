@@ -784,27 +784,31 @@ def _parse_tw_date(roc_date: str) -> str:
 
 
 def _get_tw_stock_history(symbol: str, count: int = 30) -> dict:
-    """获取台股日 K 线（TWSE 月度 STOCK_DAY API，按月拉取合并）。"""
+    """获取台股日 K 线（TWSE 月度 STOCK_DAY API，并行拉取各月）。"""
+    import concurrent.futures
     code = symbol.split(".")[0]
     now = datetime.now()
     months_needed = max(2, count // 20 + 2)
-    all_rows = []
 
-    for i in range(months_needed):
-        # 往前取各月第一天
+    def _fetch_month(i: int):
         target = (now.replace(day=1) - timedelta(days=i * 28)).replace(day=1)
         date_str = target.strftime("%Y%m01")
         url = (f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
                f"?stockNo={code}&date={date_str}&response=json")
         try:
-            with requests.Session() as sess:
-                sess.trust_env = False
-                resp = sess.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, proxies=_TW_PROXIES)
+            sess = requests.Session()
+            sess.trust_env = False
+            resp = sess.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, proxies=_TW_PROXIES)
             data = resp.json()
             if data.get("stat") == "OK" and data.get("data"):
-                all_rows.extend(data["data"])
+                return data["data"]
         except Exception:
             pass
+        return []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=months_needed) as pool:
+        results = list(pool.map(_fetch_month, range(months_needed)))
+    all_rows = [row for rows in results for row in rows]
 
     if not all_rows:
         raise ValueError(f"台股历史数据获取失败或无数据：{symbol}")
