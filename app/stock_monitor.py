@@ -1023,14 +1023,58 @@ def get_watchlist_data() -> dict:
     }
 
 
+def _get_tw_bid_ask(symbol: str) -> dict:
+    """从 TWSE MIS 实时 API 获取台股五档盘口。"""
+    code = symbol.split(".")[0]
+    try:
+        sess = requests.Session()
+        sess.trust_env = False
+        r = sess.get(
+            "https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
+            params={"ex_ch": f"tse_{code}.tw", "json": "1", "delay": "0"},
+            proxies=_TW_PROXIES, timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        r.raise_for_status()
+        item = r.json()["msgArray"][0]
+
+        def parse_level(price_str: str, vol_str: str):
+            prices = [_parse_number(p) for p in price_str.strip("_").split("_") if p and p != "-"]
+            vols   = [_parse_number(v) for v in vol_str.strip("_").split("_")   if v and v != "-"]
+            return prices, vols
+
+        ask_p, ask_v = parse_level(item.get("a", ""), item.get("f", ""))
+        bid_p, bid_v = parse_level(item.get("b", ""), item.get("g", ""))
+
+        asks = [{"level": i+1, "price": ask_p[i] if i < len(ask_p) else None,
+                 "volume": ask_v[i] if i < len(ask_v) else None} for i in range(5)]
+        bids = [{"level": i+1, "price": bid_p[i] if i < len(bid_p) else None,
+                 "volume": bid_v[i] if i < len(bid_v) else None} for i in range(5)]
+
+        cur = _parse_number(item.get("z")) or _parse_number(item.get("y"))
+        return {
+            "symbol": symbol,
+            "name": item.get("n", code),
+            "current_price": cur,
+            "previous_close": _parse_number(item.get("y")),
+            "open": _parse_number(item.get("o")),
+            "high": _parse_number(item.get("h")),
+            "low": _parse_number(item.get("l")),
+            "bids": bids,
+            "asks": asks,
+            "timestamp": f"{item.get('^','')} {item.get('t','')}".strip(),
+        }
+    except Exception as exc:
+        raise ValueError(f"台股五档获取失败：{exc}") from exc
+
+
 def get_bid_ask(symbol: str) -> dict:
     """获取单只股票的买卖五档盘口（新浪实时行情）。
     新浪 hq.sinajs.cn 返回逗号分隔字段，含买一~买五、卖一~卖五的价与量(单位:股)。
-    台股不支持五档盘口（新浪不覆盖台湾市场）。
     """
     normalized = normalize_symbol(symbol)
     if normalized.endswith(".TW"):
-        raise ValueError(f"台股五档盘口数据暂不支持：{normalized}")
+        return _get_tw_bid_ask(symbol)
     full = _symbol_to_full_code(symbol)        # sh600519
     normalized = normalize_symbol(symbol)      # 600519.SH
     try:
@@ -1285,7 +1329,7 @@ def _get_tw_intraday(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
             dt = datetime.fromtimestamp(ts, tz=tw_tz)
             if dt.hour < 9 or dt.hour > 13 or (dt.hour == 13 and dt.minute > 30):
                 continue
-            bars.append({"time": dt.strftime("%H:%M"), "close": round(c, 2),
+            bars.append({"time": dt.strftime("%Y-%m-%d %H:%M"), "close": round(c, 2),
                          "volume": int(v) if v else 0})
 
         has_prev = day_offset < 30 and target.weekday() > 0
