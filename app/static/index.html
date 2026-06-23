@@ -979,6 +979,8 @@
     });
     // 点击术语问号只看说明，不触发列排序
     document.querySelectorAll('th .help').forEach(h => h.addEventListener('click', e => e.stopPropagation()));
+    // 市场筛选
+    marketSelect.addEventListener('change', () => { page = 1; loadStockPage(); });
     // 涨跌幅筛选
     filterSelect.addEventListener('change', () => { filterMode = filterSelect.value; page = 1; loadStockPage(); });
     // 趋势筛选

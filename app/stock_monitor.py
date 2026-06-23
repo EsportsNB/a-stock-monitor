@@ -323,6 +323,61 @@ def _refresh_index_cache():
         _cache["index_at"] = datetime.now()
 
 
+_tw_index_cache: dict = {"snapshot": None, "at": None}
+
+
+def _fetch_tw_index_snapshot() -> Optional[dict]:
+    """Fetch Taiwan Weighted Stock Index (TAIEX) from TWSE MIS real-time API."""
+    try:
+        sess = requests.Session()
+        sess.trust_env = False
+        resp = sess.get(
+            "https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
+            params={"ex_ch": "tse_t00.tw", "json": "1", "delay": "0"},
+            proxies=_TW_PROXIES,
+            timeout=8,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        items = data.get("msgArray", [])
+        if not items:
+            return None
+        item = items[0]
+        price = _parse_number(item.get("z") or item.get("y"))
+        prev = _parse_number(item.get("y"))
+        if price is None or prev is None:
+            return None
+        change = round(price - prev, 2)
+        change_pct = round(change / prev * 100, 2) if prev else 0.0
+        return {
+            "code": "tw000001",
+            "name": "台湾加权",
+            "price": price,
+            "change": change,
+            "change_percent": change_pct,
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    except Exception as exc:
+        print(f"Warning: fetch TW index failed: {exc}")
+        return None
+
+
+def _get_tw_index_snapshot() -> Optional[dict]:
+    """Return cached TAIEX snapshot; refresh if older than 60 s."""
+    with _cache_lock:
+        snap = _tw_index_cache.get("snapshot")
+        at = _tw_index_cache.get("at")
+    if at is None or (datetime.now() - at).total_seconds() > 60:
+        new_snap = _fetch_tw_index_snapshot()
+        if new_snap:
+            with _cache_lock:
+                _tw_index_cache["snapshot"] = new_snap
+                _tw_index_cache["at"] = datetime.now()
+            snap = new_snap
+    return snap
+
+
 def _parse_tw_num(s: str) -> Optional[float]:
     """移除逗号后解析台股数字字段（含 +/- 符号）。"""
     if s is None:
@@ -865,6 +920,9 @@ def get_index_snapshots() -> List[dict]:
         )
     if not snapshots:
         raise ValueError("未查询到主要指数数据")
+    tw_snap = _get_tw_index_snapshot()
+    if tw_snap:
+        snapshots.append(tw_snap)
     return snapshots
 
 
