@@ -1228,20 +1228,90 @@ def _extract_watch_alerts(items: List[dict]) -> List[dict]:
     return alerts
 
 
+def _get_tw_intraday(symbol: str, scale: int = 5, day_offset: int = 0) -> dict:
+    """从 Yahoo Finance 拉取台股分时 K 线（走代理）。"""
+    from datetime import timezone
+    code = symbol.split(".")[0]
+    yf_sym = f"{code}.TW"
+    tw_tz = timezone(timedelta(hours=8))
+
+    # scale → Yahoo Finance interval（最细 1m，但历史超 7 天只支持 ≥5m）
+    if scale <= 2:
+        interval = "2m"
+    elif scale <= 5:
+        interval = "5m"
+    elif scale <= 15:
+        interval = "15m"
+    elif scale <= 30:
+        interval = "30m"
+    else:
+        interval = "60m"
+
+    # 找到 day_offset 个交易日（跳过周末）之前的日期
+    now_tw = datetime.now(tw_tz)
+    target = now_tw.date()
+    skipped = 0
+    while skipped < day_offset:
+        target -= timedelta(days=1)
+        if target.weekday() < 5:   # Mon-Fri
+            skipped += 1
+
+    # 台股交易时段 09:00-13:30 (UTC+8)
+    start_ts = int(datetime(target.year, target.month, target.day, 8, 55, tzinfo=tw_tz).timestamp())
+    end_ts   = int(datetime(target.year, target.month, target.day, 13, 35, tzinfo=tw_tz).timestamp())
+
+    try:
+        sess = requests.Session()
+        sess.trust_env = False
+        r = sess.get(
+            f"https://query2.finance.yahoo.com/v8/finance/chart/{yf_sym}",
+            params={"interval": interval, "period1": start_ts, "period2": end_ts},
+            proxies=_TW_PROXIES, timeout=10,
+            headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"},
+        )
+        r.raise_for_status()
+        result = r.json()["chart"]["result"][0]
+        meta = result["meta"]
+        timestamps = result.get("timestamp") or []
+        q = result["indicators"]["quote"][0]
+        closes  = q.get("close",  [None] * len(timestamps))
+        volumes = q.get("volume", [0]    * len(timestamps))
+        prev_close = meta.get("previousClose") or meta.get("chartPreviousClose")
+
+        bars = []
+        for ts, c, v in zip(timestamps, closes, volumes):
+            if c is None:
+                continue
+            dt = datetime.fromtimestamp(ts, tz=tw_tz)
+            if dt.hour < 9 or dt.hour > 13 or (dt.hour == 13 and dt.minute > 30):
+                continue
+            bars.append({"time": dt.strftime("%H:%M"), "close": round(c, 2),
+                         "volume": int(v) if v else 0})
+
+        has_prev = day_offset < 30 and target.weekday() > 0
+        return {
+            "symbol": symbol, "scale": scale, "day_offset": day_offset,
+            "date": target.strftime("%Y-%m-%d"),
+            "prev_close": prev_close, "bars": bars,
+            "has_prev": has_prev, "has_next": day_offset > 0,
+        }
+    except Exception as exc:
+        print(f"Warning: TW intraday fetch failed: {exc}")
+        return {
+            "symbol": symbol, "scale": scale, "day_offset": day_offset,
+            "date": target.strftime("%Y-%m-%d"), "prev_close": None, "bars": [],
+            "has_prev": False, "has_next": day_offset > 0,
+        }
+
+
 def get_stock_intraday(symbol: str, scale: int = 1, day_offset: int = 0) -> dict:
     """获取分时行情（新浪 JSONP 分钟级 K 线）。
     scale=1 为 1 分钟，scale=5 为 5 分钟，最大 60。
     day_offset：0=最近交易日(当天)，1=前一交易日，依次往前，用于翻看历史分时。
     一个交易日约 240/scale 根，多取几天用于切换日期 + 计算各日昨收。
-    台股暂不支持分时数据（新浪 JSONP 不覆盖台湾市场）。
     """
     if normalize_symbol(symbol).endswith(".TW"):
-        return {
-            "symbol": normalize_symbol(symbol), "scale": scale, "day_offset": day_offset,
-            "date": None, "prev_close": None, "bars": [],
-            "has_prev": False, "has_next": False,
-            "message": "台股分时数据暂不支持",
-        }
+        return _get_tw_intraday(symbol, scale=max(5, scale), day_offset=day_offset)
     full = _symbol_to_full_code(symbol)   # sh600519
     day_offset = max(0, int(day_offset))
     bars_per_day = max(1, 240 // scale)
