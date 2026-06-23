@@ -23,6 +23,7 @@ class StockTrend(BaseModel):
 class StockItem(BaseModel):
     symbol: str
     name: str
+    market: Optional[str] = None
     current_price: Optional[float]
     previous_close: Optional[float]
     change: Optional[float]

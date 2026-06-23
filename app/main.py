@@ -98,7 +98,7 @@ async def get_stocks(symbols: str = Query(..., description="逗号分隔股票�
 async def stock_list(
     page: int = Query(1, ge=1),
     page_size: int = Query(50, ge=10, le=100),
-    market: Optional[str] = Query("all", regex="^(all|sh|sz|bj)$"),
+    market: Optional[str] = Query("all", regex="^(all|sh|sz|bj|tw)$"),
     query: Optional[str] = Query(None),
     sort_by: str = Query("code", regex="^(code|name|current_price|change|change_percent|high|low|volume|volume_delta|volume_ratio|turnover)$"),
     order: str = Query("asc", regex="^(asc|desc)$"),
@@ -225,6 +225,7 @@ async def predict_review_pending():
 @app.get("/api/predict/status")
 def predict_status():
     return _predict_status
+
 
 
 @app.get("/api/predict/history")

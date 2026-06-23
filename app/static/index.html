@@ -96,23 +96,30 @@
     /* 股票列表中已关注股票的星星标识 */
     #stockListTable tr.watched-row td:first-child::before { content: '★ '; color: #f59e0b; }
     /* 固定表格布局：列宽不随数据/排序变化，杜绝点击排序时整表抖动 */
-    #stockListTable { table-layout: fixed; width: 100%; min-width: 978px; }
+    #stockListTable { table-layout: fixed; width: 100%; min-width: 1040px; }
     #stockListTable th, #stockListTable td { padding-left: 6px; padding-right: 6px; }
-    #stockListTable th { white-space: nowrap; }            /* 列名完整显示，不截断 */
-    #stockListTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* 仅数据过长时省略 */
-    #stockListTable th:nth-child(1){width:104px}  /* 代码（含已关注★标识空间） */
-    #stockListTable th:nth-child(2){width:82px}   /* 名称 */
-    #stockListTable th:nth-child(3){width:66px}   /* 现价 */
-    #stockListTable th:nth-child(4){width:64px}   /* 涨跌 */
-    #stockListTable th:nth-child(5){width:74px}   /* 涨跌幅 */
-    #stockListTable th:nth-child(6){width:64px}   /* 最高 */
-    #stockListTable th:nth-child(7){width:64px}   /* 最低 */
-    #stockListTable th:nth-child(8){width:80px}   /* 成交量 */
-    #stockListTable th:nth-child(9){width:80px}   /* 即时量 */
-    #stockListTable th:nth-child(10){width:62px}  /* 基线 */
-    #stockListTable th:nth-child(11){width:92px}  /* 放量倍数 */
-    #stockListTable th:nth-child(12){width:64px}  /* 异动 */
-    #stockListTable th:nth-child(13){width:84px}  /* 趋势 */
+    #stockListTable th { white-space: nowrap; }
+    #stockListTable td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #stockListTable th:nth-child(1){width:104px}  /* 代码 */
+    #stockListTable th:nth-child(2){width:52px}   /* 市场 */
+    #stockListTable th:nth-child(3){width:82px}   /* 名称 */
+    #stockListTable th:nth-child(4){width:66px}   /* 现价 */
+    #stockListTable th:nth-child(5){width:64px}   /* 涨跌 */
+    #stockListTable th:nth-child(6){width:74px}   /* 涨跌幅 */
+    #stockListTable th:nth-child(7){width:64px}   /* 最高 */
+    #stockListTable th:nth-child(8){width:64px}   /* 最低 */
+    #stockListTable th:nth-child(9){width:80px}   /* 成交量 */
+    #stockListTable th:nth-child(10){width:80px}  /* 即时量 */
+    #stockListTable th:nth-child(11){width:62px}  /* 基线 */
+    #stockListTable th:nth-child(12){width:92px}  /* 放量倍数 */
+    #stockListTable th:nth-child(13){width:64px}  /* 异动 */
+    #stockListTable th:nth-child(14){width:84px}  /* 趋势 */
+    /* 市场标签小徽章 */
+    .mkt { display:inline-block; padding:1px 5px; border-radius:4px; font-size:11px; font-weight:700; }
+    .mkt-sh { background:#1e3a5f; color:#93c5fd; }
+    .mkt-sz { background:#14532d; color:#86efac; }
+    .mkt-bj { background:#3b1a75; color:#c4b5fd; }
+    .mkt-tw { background:#7c2d12; color:#fed7aa; }
     th.sortable { cursor: pointer; user-select: none; white-space: nowrap; }
     th.sortable:hover { background: #27314d; }
     /* 箭头固定宽度占位，避免点击排序时列宽跳动 */
@@ -123,6 +130,38 @@
       margin-left: 4px; border-radius: 50%; background: #475569; color: #fff; font-size: 10px; font-weight: 700;
       cursor: help; vertical-align: middle; }
     .help:hover { background: var(--accent); }
+
+    /* —— 交易须知弹窗 —— */
+    .guide-modal { background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      width: min(860px, 95vw); max-height: 90vh; overflow-y: auto; padding: 28px 32px;
+      box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+    .guide-modal h2 { margin: 0 0 4px; font-size: 20px; }
+    .guide-modal .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 22px; }
+    .guide-section { margin-bottom: 26px; }
+    .guide-section h3 { font-size: 15px; color: #93c5fd; margin: 0 0 10px; padding-bottom: 6px;
+      border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 6px; }
+    .guide-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+    .guide-item { background: var(--card-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+    .guide-item .gi-label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .guide-item .gi-val { font-size: 14px; font-weight: 700; color: var(--text); }
+    .guide-item .gi-note { font-size: 12px; color: var(--muted); margin-top: 4px; line-height: 1.5; }
+    .guide-tip { background: var(--card-2); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+      padding: 10px 14px; margin-bottom: 8px; font-size: 13px; line-height: 1.7; }
+    .guide-tip b { color: var(--text); }
+    .guide-tip .tag { display:inline-block; padding:1px 7px; border-radius:8px; font-size:11px; font-weight:700;
+      margin-right:4px; vertical-align:middle; }
+    .tag-warn  { background:#78350f; color:#fcd34d; }
+    .tag-ok    { background:#14532d; color:#86efac; }
+    .tag-info  { background:#1e3a5f; color:#93c5fd; }
+    .guide-table { width:100%; border-collapse:collapse; font-size:13px; }
+    .guide-table th { background:var(--th-bg); padding:8px 12px; text-align:left; font-size:12px; color:var(--muted); font-weight:600; }
+    .guide-table td { padding:8px 12px; border-bottom:1px solid var(--border); }
+    .guide-table tr:last-child td { border-bottom:none; }
+    .guide-close { float:right; background:transparent; border:1px solid var(--border); color:var(--muted);
+      padding:6px 14px; border-radius:6px; font-size:13px; cursor:pointer; }
+    .guide-close:hover { background:var(--hover); color:var(--text); }
+    .btn-guide { background:#27314d; border:1px solid var(--border); color:var(--muted); font-size:13px; padding:8px 16px; }
+    .btn-guide:hover { background:var(--hover); color:var(--text); }
   </style>
 </head>
 <body>
@@ -132,12 +171,15 @@
   </div>
   <div class="container">
     <div class="card">
-      <h1>中国股市实时监控</h1>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px;">
+        <h1 style="margin:0;">中国股市实时监控</h1>
+        <button class="btn-guide" onclick="document.getElementById('guideModal').classList.add('show')">📋 交易须知</button>
+      </div>
       <div class="row">
         <div class="input-box">
           <input id="searchInput" placeholder="搜索代码或名称，例如 600519 / 贵州茅台" />
         </div>
-        <div style="width: 140px;"><select id="marketSelect"><option value="all">全部</option><option value="sh">上证</option><option value="sz">深证</option><option value="bj">北证</option></select></div>
+        <div style="width: 160px;"><select id="marketSelect"><option value="all">全部(A股+台股)</option><option value="sh">沪A(上证)</option><option value="sz">深A(深证)</option><option value="bj">北A(北证)</option><option value="tw">台股(TWSE)</option></select></div>
         <div><button id="searchBtn">查询</button></div>
       </div>
       <div class="status" id="status">直接浏览全部股票，可切换市场并点击行查看走势图。</div>
@@ -226,6 +268,7 @@
             <thead>
               <tr>
                 <th class="sortable" data-sort="code">代码<span class="arrow"></span></th>
+                <th>市场</th>
                 <th class="sortable" data-sort="name">名称<span class="arrow"></span></th>
                 <th class="sortable" data-sort="current_price">现价<span class="arrow"></span></th>
                 <th class="sortable" data-sort="change">涨跌<span class="arrow"></span></th>
@@ -419,9 +462,13 @@
           else if (stock.alert === 'big_trade') { alertBadge = '<span class="badge badge-trade">放量</span>'; }
           const ratio = stock.volume_ratio != null ? Number(stock.volume_ratio).toFixed(1) + '×' : '--';
           const ratioCls = (stock.volume_ratio != null && stock.volume_ratio >= 3) ? 'vol-spike' : '';
+          const mktMap = {'沪A':'sh','深A':'sz','北A':'bj','台股':'tw'};
+          const mktCls = mktMap[stock.market] || '';
+          const mktBadge = stock.market ? `<span class="mkt mkt-${mktCls}">${stock.market}</span>` : '';
           return `
             <tr class="${rowCls}" data-symbol="${stock.symbol}">
               <td>${stock.symbol}</td>
+              <td>${mktBadge}</td>
               <td>${stock.name}</td>
               <td class="${sign}">${formatNumber(stock.current_price)}</td>
               <td class="${sign}">${stock.change == null ? '--' : Number(stock.change).toFixed(2)}</td>
@@ -666,6 +713,13 @@
         const res = await fetch(`/api/stock/${encodeURIComponent(selectedSymbol)}/intraday?scale=${scale}&day_offset=${intradayDayOffset}`);
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '获取分时数据失败'); }
         const data = await res.json();
+        // 台股/不支持的市场：显示提示
+        if (data.message) {
+          document.getElementById('intradayDate').textContent = data.message;
+          document.getElementById('intradayPrev').disabled = true;
+          document.getElementById('intradayNext').disabled = true;
+          return;
+        }
         // 越界（请求的历史日无数据）：回退一步，提示到头了
         if ((!data.bars || !data.bars.length) && intradayDayOffset > 0) {
           intradayDayOffset -= 1;
@@ -1025,5 +1079,126 @@
       setInterval(loadIndices, 30000);     // 指数 30 秒刷新
     });
   </script>
+
+  <!-- ===== 交易须知弹窗 ===== -->
+  <div class="modal-mask" id="guideModal" onclick="if(event.target===this)this.classList.remove('show')">
+    <div class="guide-modal">
+      <button class="guide-close" onclick="document.getElementById('guideModal').classList.remove('show')">✕ 关闭</button>
+      <h2>📋 A股交易须知</h2>
+      <p class="subtitle">适合新手快速了解 A 股基本规则、费用与操作技巧。内容仅供参考，不构成投资建议。</p>
+
+      <!-- 基本规则 -->
+      <div class="guide-section">
+        <h3>⚙️ 基本交易规则</h3>
+        <div class="guide-grid">
+          <div class="guide-item">
+            <div class="gi-label">交割制度</div>
+            <div class="gi-val">T+1</div>
+            <div class="gi-note">今日买入的股票，<b>明日</b>才能卖出。当日卖出所得资金可立即再买入（资金 T+0）。</div>
+          </div>
+          <div class="guide-item">
+            <div class="gi-label">最小交易单位</div>
+            <div class="gi-val">1 手 = 100 股</div>
+            <div class="gi-note">买入必须是 100 的整数倍；卖出可以是零碎股（不足 100 股的零股）。</div>
+          </div>
+          <div class="guide-item">
+            <div class="gi-label">交易时间</div>
+            <div class="gi-val">9:30 – 15:00</div>
+            <div class="gi-note">上午 9:30–11:30，下午 13:00–15:00（沪深主板）；科创板、北交所收盘延至 15:30。</div>
+          </div>
+          <div class="guide-item">
+            <div class="gi-label">集合竞价</div>
+            <div class="gi-val">9:15 – 9:25</div>
+            <div class="gi-note">9:25 前可挂单不成交，9:25–9:30 撮合出开盘价。尾盘 14:57–15:00 也有集合竞价。</div>
+          </div>
+          <div class="guide-item">
+            <div class="gi-label">涨跌停（主板）</div>
+            <div class="gi-val">± 10%</div>
+            <div class="gi-note">科创板 / 创业板 ±20%；北交所 ±30%；新股上市首 5 日无限制。ST 股 ±5%。</div>
+          </div>
+          <div class="guide-item">
+            <div class="gi-label">涨停封单</div>
+            <div class="gi-val">流动性风险</div>
+            <div class="gi-note">涨停时几乎买不到；跌停时几乎卖不掉。极端行情下可能连续多日跌停无法出逃。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 费用 -->
+      <div class="guide-section">
+        <h3>💰 交易费用明细</h3>
+        <table class="guide-table">
+          <thead><tr><th>费用名称</th><th>收费方</th><th>费率</th><th>收取时机</th><th>备注</th></tr></thead>
+          <tbody>
+            <tr><td>佣金</td><td>券商</td><td>万分之 1–3（低至万一）</td><td>买入 + 卖出各收一次</td><td>互联网券商通常更低，可谈</td></tr>
+            <tr><td>印花税</td><td>国家</td><td>千分之 1（0.1%）</td><td>仅卖出时收取</td><td>2023 年 8 月起减半至 0.1%，<b>短线最大成本</b></td></tr>
+            <tr><td>过户费</td><td>交易所</td><td>约万分之 0.2</td><td>买入 + 卖出各收一次</td><td>仅沪市收，深市免；金额极小</td></tr>
+          </tbody>
+        </table>
+        <div class="guide-tip" style="margin-top:10px;">
+          <span class="tag tag-info">示例</span>
+          买入 10 万元并当日卖出（假设不亏不赚）：佣金 20 元 + 印花税 100 元 ≈ <b>合计约 120 元（0.12%）</b>。
+          频繁短线交易印花税叠加显著，做 10 次等于亏掉 1% 本金。
+        </div>
+      </div>
+
+      <!-- 板块差异 -->
+      <div class="guide-section">
+        <h3>🏛️ 三大板块对比</h3>
+        <table class="guide-table">
+          <thead><tr><th>板块</th><th>代码前缀</th><th>涨跌停</th><th>门槛 / 特点</th></tr></thead>
+          <tbody>
+            <tr><td>沪深主板</td><td>6xxxxx / 0xxxxx</td><td>±10%</td><td>无开户门槛；上市标准严，蓝筹为主</td></tr>
+            <tr><td>科创板（上交所）</td><td>688xxx</td><td>±20%（上市前 5 日无限）</td><td>需 50 万资产 + 2 年经验；主要是科技企业</td></tr>
+            <tr><td>创业板（深交所）</td><td>300xxx / 301xxx</td><td>±20%（上市前 5 日无限）</td><td>需 10 万资产 + 2 年经验；成长型企业</td></tr>
+            <tr><td>北交所</td><td>8xxxxx / 4xxxxx</td><td>±30%</td><td>需 100 万资产 + 2 年经验；专精特新中小企业</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 新手操作技巧 -->
+      <div class="guide-section">
+        <h3>💡 新手操作要点</h3>
+        <div class="guide-tip"><span class="tag tag-warn">重要</span> <b>仓位控制：</b>单只股票不超过总资金 20–30%，保留部分现金应对下跌加仓机会，避免满仓被套。</div>
+        <div class="guide-tip"><span class="tag tag-warn">重要</span> <b>止损纪律：</b>买入前设好止损位（常用 -8%），触及后坚决止损，避免小亏变大亏。A 股跌停连续时可能无法止损。</div>
+        <div class="guide-tip"><span class="tag tag-info">技巧</span> <b>集合竞价观察：</b>9:25 的集合竞价量能反映当日市场情绪，大量挂买单且高开通常显示资金积极入场。</div>
+        <div class="guide-tip"><span class="tag tag-info">技巧</span> <b>成交量配合价格：</b>量增价涨为强势，量缩价涨需谨慎（上涨动力不足），量增价跌说明抛压大。</div>
+        <div class="guide-tip"><span class="tag tag-info">技巧</span> <b>避开龙虎榜陷阱：</b>游资拉升后快速出货，散户追高极易高位接盘。龙虎榜仅供观察，不宜直接跟进。</div>
+        <div class="guide-tip"><span class="tag tag-ok">参考</span> <b>大盘先行：</b>个股受大盘牵制。上证指数、深证成指同时下跌时，即使个股基本面好，也可能随大盘下跌。</div>
+        <div class="guide-tip"><span class="tag tag-ok">参考</span> <b>换手率参考：</b>当日换手率 >5% 说明交易活跃；>10% 可能是主力在出货（需结合价格判断）。</div>
+        <div class="guide-tip"><span class="tag tag-ok">参考</span> <b>避开消息面陷阱：</b>"利好出尽是利空"——好消息公布时股价往往已提前上涨，公告当天追买风险高。</div>
+      </div>
+
+      <!-- 常见风险提示 -->
+      <div class="guide-section">
+        <h3>⚠️ 常见风险与禁忌</h3>
+        <div class="guide-tip"><span class="tag tag-warn">禁忌</span> <b>不要融资融券（杠杆）：</b>新手严禁使用融资，杠杆放大收益的同时也放大亏损，可能导致强制平仓、本金归零甚至负债。</div>
+        <div class="guide-tip"><span class="tag tag-warn">禁忌</span> <b>不要追涨停板：</b>已经涨停的股票次日大概率低开，追板买入成功率低，高位被套风险大。</div>
+        <div class="guide-tip"><span class="tag tag-warn">禁忌</span> <b>不要听小道消息：</b>所谓"内幕消息"大多是骗局或出货陷阱；散户几乎不可能获取真正的合法内幕信息。</div>
+        <div class="guide-tip"><span class="tag tag-warn">禁忌</span> <b>不要重仓一只股票：</b>单只个股的黑天鹅风险（退市、停牌、财务造假）比指数高得多，集中持仓风险巨大。</div>
+        <div class="guide-tip"><span class="tag tag-info">提示</span> <b>退市风险：</b>A 股存在强制退市制度，连续亏损、财务违规、股价长期低于 1 元均可退市，退市股极难变现。</div>
+        <div class="guide-tip"><span class="tag tag-info">提示</span> <b>印花税不可避免：</b>无论盈亏，卖出都要缴印花税。短线频繁操作磨损极大，长线持有摊薄交易成本。</div>
+      </div>
+
+      <!-- 术语速查 -->
+      <div class="guide-section">
+        <h3>📖 常用术语速查</h3>
+        <div class="guide-grid">
+          <div class="guide-item"><div class="gi-label">多头 / 做多</div><div class="gi-note">看涨买入，期待价格上涨后卖出获利。</div></div>
+          <div class="guide-item"><div class="gi-label">空头 / 做空</div><div class="gi-note">A 股普通账户无法做空；融券可借股卖出，到期买回还券。</div></div>
+          <div class="guide-item"><div class="gi-label">换手率</div><div class="gi-note">当日成交量 ÷ 流通股数，反映当天有多少比例的股票换了手。</div></div>
+          <div class="guide-item"><div class="gi-label">市盈率 (PE)</div><div class="gi-note">股价 ÷ 每股收益，衡量估值高低；PE 越高说明市场给的溢价越高。</div></div>
+          <div class="guide-item"><div class="gi-label">封单 / 炸板</div><div class="gi-note">涨停时买方排队等买叫封单；若被大单砸开涨停叫炸板，风险极高。</div></div>
+          <div class="guide-item"><div class="gi-label">均线 (MA)</div><div class="gi-note">N 日收盘价平均值。股价站上 MA 为偏强信号，跌破 MA 为偏弱信号。</div></div>
+          <div class="guide-item"><div class="gi-label">量价背离</div><div class="gi-note">价格创新高但成交量萎缩，说明上涨动能不足，需警惕回调。</div></div>
+          <div class="guide-item"><div class="gi-label">主力资金</div><div class="gi-note">大额买入或卖出的机构/游资。本站"大单异动"即监控主力资金流向。</div></div>
+        </div>
+      </div>
+
+      <p style="color:var(--muted);font-size:12px;text-align:center;margin-top:8px;">
+        ⚠️ 以上内容仅供学习参考，不构成任何投资建议。股市有风险，入市需谨慎。
+      </p>
+    </div>
+  </div>
 </body>
 </html>

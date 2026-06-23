@@ -11,6 +11,14 @@ from datetime import datetime, timedelta
 from threading import RLock, Thread
 from typing import List, Optional
 
+# 台股 TWSE 在境外，需走本地代理（Clash 默认 7890）。
+# 优先使用启动前的系统代理，若无则回退到 Clash 默认端口。
+_ORIG_PROXY = (
+    os.environ.get("HTTPS_PROXY") or os.environ.get("https_proxy")
+    or os.environ.get("HTTP_PROXY") or os.environ.get("http_proxy") or ""
+)
+_TW_PROXIES = {"http": _ORIG_PROXY, "https": _ORIG_PROXY} if _ORIG_PROXY else {"http": "http://127.0.0.1:7890", "https": "http://127.0.0.1:7890"}
+
 CACHE_TTL_SECONDS = 30
 # 关注列表要做“即时成交量/大户异动”监控，刷新越快越灵敏。
 # 绕过代理后全市场单次拉取约 15s，30s 间隔兼顾灵敏度与负载（间隔过小会与拉取时间重叠）。
@@ -29,6 +37,8 @@ _cache = {
     "index_df": None,
     "index_at": None,
 }
+# 台股（TWSE 上市）独立缓存
+_tw_cache = {"df": None, "at": None}
 
 # 全市场每只股票上一次的累计值/价格 + 成交量增量历史，用于计算即时成交量与异动。
 # 仅后台刷新线程写入，故无需加锁。
@@ -75,24 +85,24 @@ def spot_source() -> Optional[str]:
 
 
 def normalize_symbol(symbol: str) -> str:
-    """Return symbol in NNNNNN.XX form (e.g. 600519.SH).
-    Accepts: 600519, sh600519, 600519.SH, etc.
+    """Return symbol in NNNNNN.XX form (e.g. 600519.SH, 2330.TW).
+    Accepts: 600519, sh600519, 600519.SH, 2330.TW, tw2330, etc.
     """
     s = symbol.strip()
     lower = s.lower()
-    # Already in dot-suffix form
     upper = s.upper()
+    if upper.endswith(".TW"):
+        return upper
     if upper.endswith(".SH") or upper.endswith(".SZ") or upper.endswith(".BJ"):
         return upper
-    # akshare-style prefix (sh/sz/bj)
+    if lower.startswith("tw"):
+        return f"{s[2:].upper()}.TW"
     if lower.startswith("sh"):
         return f"{s[2:].upper()}.SH"
     if lower.startswith("sz"):
         return f"{s[2:].upper()}.SZ"
     if lower.startswith("bj"):
         return f"{s[2:].upper()}.BJ"
-    # Auto-detect from numeric code. The exact exchange is confirmed later by a
-    # bare-code lookup against live data, so these prefixes are only a best guess.
     code = s.upper()
     if code.startswith("6"):
         return f"{code}.SH"
@@ -313,11 +323,102 @@ def _refresh_index_cache():
         _cache["index_at"] = datetime.now()
 
 
+def _parse_tw_num(s: str) -> Optional[float]:
+    """移除逗号后解析台股数字字段（含 +/- 符号）。"""
+    if s is None:
+        return None
+    cleaned = str(s).replace(",", "").strip()
+    if cleaned in ("--", "", "-"):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _fetch_tw_spot_data() -> "pd.DataFrame":
+    """台股 TWSE 上市行情（STOCK_DAY_ALL），标准化后代码加 tw 前缀。
+    TWSE 是境外服务器，显式使用启动前保存的系统代理（如 Clash），
+    不受 disable_proxy_for_china_data() 影响。
+    """
+    url = "https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY_ALL?response=json"
+    try:
+        # trust_env=False 让 Session 忽略 NO_PROXY 等环境变量，确保 _TW_PROXIES 生效
+        with requests.Session() as sess:
+            sess.trust_env = False
+            resp = sess.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20, proxies=_TW_PROXIES)
+        data = resp.json()
+    except Exception as exc:
+        print(f"Warning: 台股行情获取失败: {exc}")
+        return pd.DataFrame()
+
+    if data.get("stat") != "OK" or not data.get("data"):
+        return pd.DataFrame()
+
+    fields = data.get("fields", [])
+    rows = data["data"]
+    df = pd.DataFrame(rows, columns=fields if len(fields) == len(rows[0]) else None)
+
+    # 已知列顺序（TWSE STOCK_DAY_ALL 固定格式）：代號, 名稱, 成交股數, 成交金額, 開盤, 最高, 最低, 收盤, 漲跌, 筆數
+    if df.shape[1] >= 9:
+        df.columns = ["代码", "名称", "成交量_raw", "成交额_raw", "今开_raw",
+                      "最高_raw", "最低_raw", "最新价_raw", "涨跌额_raw", *df.columns[9:].tolist()]
+    else:
+        return pd.DataFrame()
+
+    for col in ("今开", "最高", "最低", "最新价", "涨跌额", "成交量", "成交额"):
+        raw_col = col + "_raw" if col + "_raw" in df.columns else col
+        df[col] = df[raw_col].apply(_parse_tw_num)
+
+    # 仅保留 4 位纯数字代码（排除 ETF 英文代码、特殊品种）
+    df = df[df["代码"].astype(str).str.match(r"^\d{4}$")].copy()
+
+    # 计算昨收和涨跌幅
+    df["昨收"] = df["最新价"] - df["涨跌额"]
+    df["涨跌幅"] = df.apply(
+        lambda r: (r["涨跌额"] / r["昨收"] * 100) if r["昨收"] and r["昨收"] != 0 else 0.0, axis=1
+    )
+
+    # 加 tw 前缀
+    df["代码"] = "tw" + df["代码"].astype(str)
+
+    # 补充 A 股特有列（台股无即时异动监控）
+    for col in ("即时成交量", "即时成交额", "基线成交量", "放量倍数", "异动", "异动级别"):
+        df[col] = None
+
+    df["趋势"] = _compute_trend_series(df).values
+    return df.reset_index(drop=True)
+
+
+def _refresh_tw_cache():
+    df = _fetch_tw_spot_data()
+    if not df.empty:
+        with _cache_lock:
+            _tw_cache["df"] = df
+            _tw_cache["at"] = datetime.now()
+    else:
+        print("Warning: TW fetch returned empty, keeping previous cache")
+
+
+def get_tw_spot_data() -> "pd.DataFrame":
+    with _cache_lock:
+        df = _tw_cache.get("df")
+    if df is None or (df is not None and hasattr(df, "empty") and df.empty):
+        _refresh_tw_cache()
+        with _cache_lock:
+            df = _tw_cache.get("df")
+    return df if df is not None else pd.DataFrame()
+
+
 def refresh_all_caches():
     try:
         _refresh_spot_cache()
     except Exception as exc:
         print(f"Warning: refresh spot cache failed: {exc}")
+    try:
+        _refresh_tw_cache()
+    except Exception as exc:
+        print(f"Warning: refresh TW cache failed: {exc}")
     try:
         _refresh_index_cache()
     except Exception as exc:
@@ -380,24 +481,27 @@ def make_summary(name: str, symbol: str, current_price: float, prev_close: float
 
 
 def _full_code_to_symbol(full_code: str) -> str:
-    """Convert akshare-style code (sh600519) to dot-suffix form (600519.SH)."""
+    """Convert akshare-style code (sh600519 / tw2330) to dot-suffix form (600519.SH / 2330.TW)."""
     lower = full_code.lower()
+    if lower.startswith("tw"):
+        return f"{full_code[2:]}.TW"
     if lower.startswith("sh"):
         return f"{full_code[2:]}.SH"
     if lower.startswith("bj"):
         return f"{full_code[2:]}.BJ"
     if lower.startswith("sz"):
         return f"{full_code[2:]}.SZ"
-    # Fallback: guess from numeric prefix
     if full_code.startswith("6"):
         return f"{full_code}.SH"
     return f"{full_code}.SZ"
 
 
 def _symbol_to_full_code(symbol: str) -> str:
-    """Convert dot-suffix form (600519.SH) to akshare-style code (sh600519)."""
+    """Convert dot-suffix form (600519.SH / 2330.TW) to internal code (sh600519 / tw2330)."""
     sym = normalize_symbol(symbol)
     code = sym.split(".")[0]
+    if sym.endswith(".TW"):
+        return f"tw{code}"
     if sym.endswith(".SH"):
         return f"sh{code}"
     if sym.endswith(".BJ"):
@@ -407,6 +511,14 @@ def _symbol_to_full_code(symbol: str) -> str:
 
 def _build_stock_item(row) -> dict:
     full_code = str(row.get("代码", ""))
+    if full_code.startswith("tw"):
+        market = "台股"
+    elif full_code.startswith("sh"):
+        market = "沪A"
+    elif full_code.startswith("bj"):
+        market = "北A"
+    else:
+        market = "深A"
     symbol = _full_code_to_symbol(full_code)
     current_price = _parse_number(row.get("最新价"))
     prev_close = _parse_number(row.get("昨收"))
@@ -428,6 +540,7 @@ def _build_stock_item(row) -> dict:
     return {
         "symbol": symbol,
         "name": str(row.get("名称")),
+        "market": market,
         "current_price": current_price,
         "previous_close": prev_close,
         "change": round(change or 0.0, 2),
@@ -521,13 +634,29 @@ def get_stock_list(
     max_pct: Optional[float] = None,
     trend: Optional[str] = None,
 ) -> dict:
-    all_spot = get_spot_data()
-    if market.lower() == "sh":
-        all_spot = all_spot[all_spot["代码"].astype(str).str.startswith("sh")]
-    elif market.lower() == "sz":
-        all_spot = all_spot[all_spot["代码"].astype(str).str.startswith("sz")]
-    elif market.lower() == "bj":
-        all_spot = all_spot[all_spot["代码"].astype(str).str.startswith("bj")]
+    mkt = (market or "all").lower()
+    dfs = []
+
+    if mkt in ("all", "sh", "sz", "bj"):
+        a_df = get_spot_data()
+        if mkt == "sh":
+            a_df = a_df[a_df["代码"].astype(str).str.startswith("sh")]
+        elif mkt == "sz":
+            a_df = a_df[a_df["代码"].astype(str).str.startswith("sz")]
+        elif mkt == "bj":
+            a_df = a_df[a_df["代码"].astype(str).str.startswith("bj")]
+        dfs.append(a_df)
+
+    if mkt in ("all", "tw"):
+        tw_df = get_tw_spot_data()
+        if not tw_df.empty:
+            dfs.append(tw_df)
+
+    if not dfs:
+        return {"page": page, "page_size": page_size, "total": 0, "sort_by": sort_by,
+                "order": order, "stocks": [], "updated_at": None, "refresh_interval": CACHE_REFRESH_INTERVAL}
+
+    all_spot = pd.concat(dfs, ignore_index=True) if len(dfs) > 1 else dfs[0]
 
     if query:
         q = str(query).strip()
@@ -587,8 +716,87 @@ def get_stock_list(
     }
 
 
+def _parse_tw_date(roc_date: str) -> str:
+    """将台股 ROC 日期（113/06/22）转换为 ISO 格式（2024-06-22）。"""
+    parts = roc_date.strip().split("/")
+    if len(parts) == 3:
+        try:
+            year = int(parts[0]) + 1911
+            return f"{year}-{parts[1]}-{parts[2]}"
+        except ValueError:
+            pass
+    return roc_date
+
+
+def _get_tw_stock_history(symbol: str, count: int = 30) -> dict:
+    """获取台股日 K 线（TWSE 月度 STOCK_DAY API，按月拉取合并）。"""
+    code = symbol.split(".")[0]
+    now = datetime.now()
+    months_needed = max(2, count // 20 + 2)
+    all_rows = []
+
+    for i in range(months_needed):
+        # 往前取各月第一天
+        target = (now.replace(day=1) - timedelta(days=i * 28)).replace(day=1)
+        date_str = target.strftime("%Y%m01")
+        url = (f"https://www.twse.com.tw/rwd/zh/afterTrading/STOCK_DAY"
+               f"?stockNo={code}&date={date_str}&response=json")
+        try:
+            with requests.Session() as sess:
+                sess.trust_env = False
+                resp = sess.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10, proxies=_TW_PROXIES)
+            data = resp.json()
+            if data.get("stat") == "OK" and data.get("data"):
+                all_rows.extend(data["data"])
+        except Exception:
+            pass
+
+    if not all_rows:
+        raise ValueError(f"台股历史数据获取失败或无数据：{symbol}")
+
+    # 字段顺序：日期, 成交股數, 成交金額, 開盤價, 最高價, 最低價, 收盤價, 漲跌價差, 成交筆數
+    history = []
+    seen_dates = set()
+    for row in all_rows:
+        if len(row) < 8:
+            continue
+        date_str = _parse_tw_date(str(row[0]))
+        if date_str in seen_dates:
+            continue
+        seen_dates.add(date_str)
+        history.append({
+            "date": date_str,
+            "open": _parse_tw_num(row[3]),
+            "high": _parse_tw_num(row[4]),
+            "low": _parse_tw_num(row[5]),
+            "close": _parse_tw_num(row[6]),
+            "volume": _parse_tw_num(row[1]),
+        })
+
+    history.sort(key=lambda x: x["date"])
+    history = history[-count:]
+
+    # 从 TW 缓存取股票名称
+    name = code
+    tw_df = get_tw_spot_data()
+    if not tw_df.empty:
+        row_df = tw_df.loc[tw_df["代码"] == f"tw{code}"]
+        if not row_df.empty:
+            name = str(row_df.iloc[0].get("名称", code))
+
+    from .indicators import summarize_indicators
+    return {
+        "symbol": symbol,
+        "name": name,
+        "history": history,
+        "indicators": summarize_indicators(history) if len(history) >= 10 else None,
+    }
+
+
 def get_stock_history(symbol: str, count: int = 30) -> dict:
     normalized = normalize_symbol(symbol)
+    if normalized.endswith(".TW"):
+        return _get_tw_stock_history(normalized, count)
     history_symbol = normalize_history_symbol(symbol)
     end_date = datetime.now().strftime("%Y%m%d")
     start_date = (datetime.now() - timedelta(days=count * 3)).strftime("%Y%m%d")
@@ -683,6 +891,8 @@ def _save_watchlist(codes: List[str]):
 
 def add_to_watchlist(symbol: str) -> List[str]:
     full = _symbol_to_full_code(symbol)
+    if full.startswith("tw"):
+        raise ValueError("台股暂不支持加入关注列表（无法实时监控异动），请直接在列表中点击查看走势图。")
     spot = get_spot_data()
     if spot is not None and not (spot["代码"].astype(str) == full).any():
         raise ValueError(f"未找到股票：{symbol}")
@@ -754,7 +964,11 @@ def get_watchlist_data() -> dict:
 def get_bid_ask(symbol: str) -> dict:
     """获取单只股票的买卖五档盘口（新浪实时行情）。
     新浪 hq.sinajs.cn 返回逗号分隔字段，含买一~买五、卖一~卖五的价与量(单位:股)。
+    台股不支持五档盘口（新浪不覆盖台湾市场）。
     """
+    normalized = normalize_symbol(symbol)
+    if normalized.endswith(".TW"):
+        raise ValueError(f"台股五档盘口数据暂不支持：{normalized}")
     full = _symbol_to_full_code(symbol)        # sh600519
     normalized = normalize_symbol(symbol)      # 600519.SH
     try:
@@ -957,7 +1171,15 @@ def get_stock_intraday(symbol: str, scale: int = 1, day_offset: int = 0) -> dict
     scale=1 为 1 分钟，scale=5 为 5 分钟，最大 60。
     day_offset：0=最近交易日(当天)，1=前一交易日，依次往前，用于翻看历史分时。
     一个交易日约 240/scale 根，多取几天用于切换日期 + 计算各日昨收。
+    台股暂不支持分时数据（新浪 JSONP 不覆盖台湾市场）。
     """
+    if normalize_symbol(symbol).endswith(".TW"):
+        return {
+            "symbol": normalize_symbol(symbol), "scale": scale, "day_offset": day_offset,
+            "date": None, "prev_close": None, "bars": [],
+            "has_prev": False, "has_next": False,
+            "message": "台股分时数据暂不支持",
+        }
     full = _symbol_to_full_code(symbol)   # sh600519
     day_offset = max(0, int(day_offset))
     bars_per_day = max(1, 240 // scale)
