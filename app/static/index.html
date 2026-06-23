@@ -225,10 +225,11 @@
           <span class="status" id="predictAccuracy" style="margin:0;"></span>
           <a href="/history" target="_blank" style="text-decoration:none;"><button style="background:#0ea5e9;">📅 历史与准确率</button></a>
           <button id="togglePredictBtn" style="background:#64748b;">查看全部</button>
-          <button id="runPredictBtn">立即预测</button>
+          <button id="dailyBtn">复盘+预测</button>
         </div>
       </div>
       <div class="status" id="predictStatus">加载中...</div>
+      <div id="reviewCommentBox" style="display:none;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin:8px 0;font-size:13px;line-height:1.7;white-space:pre-wrap;"></div>
       <div style="overflow-x:auto;">
         <table>
           <thead><tr><th>代码</th><th>名称</th><th>方向</th><th>预测涨幅</th><th>置信度</th><th>技术面</th><th>理由（含联网消息）</th></tr></thead>
@@ -374,6 +375,8 @@
     const predictStatus = document.getElementById('predictStatus');
     const predictTable = document.getElementById('predictTable');
     const predictAccuracy = document.getElementById('predictAccuracy');
+    const dailyBtn = document.getElementById('dailyBtn');
+    const reviewCommentBox = document.getElementById('reviewCommentBox');
     const runPredictBtn = document.getElementById('runPredictBtn');
     const togglePredictBtn = document.getElementById('togglePredictBtn');
     const watchToggleBtn = document.getElementById('watchToggleBtn');
@@ -1076,10 +1079,23 @@
 
     async function loadPrediction() {
       try {
-        const res = await fetch('/api/predict/today');
-        const d = await res.json();
+        const [res, revRes] = await Promise.all([
+          fetch('/api/predict/today'),
+          fetch('/api/predict/latest-review'),
+        ]);
+        const d   = await res.json();
+        const rev = await revRes.json();
+
+        // 显示最近一次复盘的 AI 点评（来自已复盘的历史预测，不一定是今天）
+        if (rev.review_comment) {
+          reviewCommentBox.textContent = `📋 复盘点评（${rev.date} → ${rev.review_at?.slice(0,10) || ''}）　命中 ${rev.hit_count}/${rev.pred_count}（${(rev.accuracy*100).toFixed(0)}%）\n\n${rev.review_comment}`;
+          reviewCommentBox.style.display = 'block';
+        } else {
+          reviewCommentBox.style.display = 'none';
+        }
+
         if (d.status === 'no_prediction') {
-          predictStatus.textContent = d.running ? '🔄 AI 正在预测中，请稍候…' : '今日暂无预测，点右上「立即预测」生成。';
+          predictStatus.textContent = d.running ? '🔄 AI 正在预测中，请稍候…' : '今日暂无预测，点右上按钮生成。';
           predictTable.innerHTML = '';
           togglePredictBtn.textContent = '查看全部';
           if (d.running) setTimeout(loadPrediction, 8000);
@@ -1096,22 +1112,50 @@
 
     togglePredictBtn.addEventListener('click', () => { predictShowAll = !predictShowAll; renderPredict(); });
 
-    async function runPredict() {
-      runPredictBtn.disabled = true;
-      predictStatus.textContent = '🔄 已触发，AI 联网分析中（约几分钟）…';
+    // 复盘+预测按钮：15:00 后工作日才可点击
+    function updateDailyBtn() {
+      const now = new Date();
+      const day = now.getDay(); // 0=Sun 6=Sat
+      const h = now.getHours(), m = now.getMinutes();
+      const afterClose = day >= 1 && day <= 5 && (h > 15 || (h === 15 && m >= 0));
+      if (afterClose) {
+        dailyBtn.disabled = false;
+        dailyBtn.title = '';
+        dailyBtn.textContent = '复盘+预测';
+      } else {
+        dailyBtn.disabled = true;
+        const nextText = day === 0 || day === 6 ? '下个工作日' : '今日';
+        dailyBtn.title = `${nextText} 15:00 收盘后才能执行`;
+        dailyBtn.textContent = '15:00 后可用';
+      }
+    }
+    updateDailyBtn();
+    setInterval(updateDailyBtn, 60000); // 每分钟重新检查一次
+
+    const phaseMsg = { reviewing: '🔍 正在复盘昨日预测（AI 联网分析中）…', predicting: '🤖 复盘完成，AI 预测明日涨跌中（约 2-3 分钟）…' };
+    async function runDaily() {
+      dailyBtn.disabled = true;
+      dailyBtn.textContent = '运行中…';
+      predictStatus.textContent = '🔄 已触发，正在启动…';
       try {
-        const res = await fetch('/api/predict/run', { method: 'POST' });
+        const res = await fetch('/api/predict/daily', { method: 'POST' });
         if (!res.ok) { const d = await res.json(); throw new Error(d.detail || '触发失败'); }
         const poll = setInterval(async () => {
           const s = await (await fetch('/api/predict/status')).json();
-          if (!s.running) { clearInterval(poll); runPredictBtn.disabled = false; loadPrediction(); }
-        }, 8000);
+          if (s.running) {
+            predictStatus.textContent = phaseMsg[s.phase] || '🔄 运行中…';
+          } else {
+            clearInterval(poll);
+            updateDailyBtn();
+            loadPrediction();
+          }
+        }, 6000);
       } catch (e) {
-        predictStatus.textContent = e.message;
-        runPredictBtn.disabled = false;
+        predictStatus.textContent = '❌ ' + e.message;
+        updateDailyBtn();
       }
     }
-    runPredictBtn.addEventListener('click', runPredict);
+    dailyBtn.addEventListener('click', runDaily);
 
     window.addEventListener('load', () => {
       loadIndices();

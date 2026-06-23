@@ -407,9 +407,47 @@ def review_prediction(date_str: str) -> dict:
     record["pred_count"] = total
     record["hit_count"] = correct
     record["accuracy"] = round(correct / total, 4) if total else None
+
+    # GLM AI 深度复盘点评
+    try:
+        if zhipu_available():
+            record["review_comment"] = _review_with_ai(record)
+    except Exception as exc:
+        record["review_comment"] = f"AI 分析失败：{exc}"
+
     _save_prediction(date_str, record)
     update_summary()
     return record
+
+
+def _review_with_ai(record: dict) -> str:
+    """用 GLM 联网对复盘结果做深度分析，返回文字点评。"""
+    preds    = record.get("predictions", [])
+    hits     = [p for p in preds if p.get("hit") is True]
+    misses   = [p for p in preds if p.get("hit") is False]
+    date_str = record.get("date", "")
+    hit_n    = record.get("hit_count", 0)
+    total    = record.get("pred_count", 0)
+
+    def _fmt(ps, n=15):
+        return "\n".join(
+            f"- {p.get('name')}({p.get('symbol')}): 预测{p.get('direction')}({p.get('expected_pct',0):+.1f}%) "
+            f"实际{p.get('actual_direction','?')}({p.get('actual_pct',0):+.2f}%) "
+            f"信号:[{', '.join(p.get('tech_signals') or [])}]"
+            for p in ps[:n]
+        ) or "（无）"
+
+    prompt = (
+        f"你是A股量化交易复盘专家。以下是{date_str}的AI涨跌预测复盘，"
+        f"命中{hit_n}/{total}（{hit_n/total*100:.0f}%）。\n\n"
+        f"【命中 {len(hits)} 只】\n{_fmt(hits)}\n\n"
+        f"【未命中 {len(misses)} 只】\n{_fmt(misses)}\n\n"
+        "请联网查询今日大盘走势后，用中文分3点作答（共200字以内）：\n"
+        "1. 命中/未命中的共同规律（板块、信号、市值等维度）\n"
+        "2. 今日大盘环境对预测的影响\n"
+        "3. 下次预测的改进建议（具体可操作）"
+    )
+    return _call_glm([{"role": "user", "content": prompt}], use_web_search=True, temperature=0.4)
 
 
 # ============================================================
