@@ -437,6 +437,57 @@ def _fetch_tw_spot_data() -> "pd.DataFrame":
     # 加 tw 前缀
     df["代码"] = "tw" + df["代码"].astype(str)
 
+    # —— 用 TWSE MIS 实时行情覆盖价格字段（盘中使用 z，盘后 z="-" 则保留 afterTrading 值）——
+    try:
+        codes = df["代码"].str.replace("tw", "", regex=False).tolist()
+        batch = 120
+        def _fetch_mis_batch(batch_codes):
+            ex_ch = "|".join(f"tse_{c}.tw" for c in batch_codes)
+            sess = requests.Session()
+            sess.trust_env = False
+            r = sess.get(
+                "https://mis.twse.com.tw/stock/api/getStockInfo.jsp",
+                params={"ex_ch": ex_ch, "json": "1", "delay": "0"},
+                proxies=_TW_PROXIES, timeout=15,
+                headers={"User-Agent": "Mozilla/5.0"},
+            )
+            return r.json().get("msgArray", [])
+
+        import concurrent.futures
+        batches = [codes[i:i+batch] for i in range(0, len(codes), batch)]
+        with concurrent.futures.ThreadPoolExecutor(max_workers=len(batches)) as pool:
+            all_items = [item for items in pool.map(_fetch_mis_batch, batches) for item in items]
+
+        mis_map = {item.get("c", ""): item for item in all_items}
+        bare = df["代码"].str.replace("tw", "", regex=False)
+
+        def mis_col(field, fallback=None):
+            def _get(code):
+                it = mis_map.get(code)
+                if not it:
+                    return None
+                v = _parse_tw_num(it.get(field))
+                if v is None and fallback:
+                    v = _parse_tw_num(it.get(fallback))
+                return v
+            return bare.map(_get)
+
+        z_s = mis_col("z", "y")   # 盘中实时价，收盘后降级用昨收
+        y_s = mis_col("y")
+        o_s = mis_col("o")
+        h_s = mis_col("h")
+        l_s = mis_col("l")
+
+        df["最新价"] = z_s.where(z_s.notna(), df["最新价"])
+        df["昨收"]  = y_s.where(y_s.notna(), df["昨收"])
+        df["今开"]  = o_s.where(o_s.notna(), df["今开"])
+        df["最高"]  = h_s.where(h_s.notna(), df["最高"])
+        df["最低"]  = l_s.where(l_s.notna(), df["最低"])
+        df["涨跌额"] = df["最新价"] - df["昨收"]
+        df["涨跌幅"] = (df["涨跌额"] / df["昨收"].replace(0, float("nan")) * 100).fillna(0.0)
+    except Exception as exc:
+        print(f"Warning: MIS实时价格覆盖失败，使用昨日收盘价: {exc}")
+
     # 补充 A 股特有列（台股无即时异动监控）
     for col in ("即时成交量", "即时成交额", "基线成交量", "放量倍数", "异动", "异动级别"):
         df[col] = None
